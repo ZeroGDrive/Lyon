@@ -96,7 +96,6 @@ function SideBySideDiff({ file, commentsByLine, onAddComment }: SideBySideDiffPr
 
   const handleAddComment = useCallback(
     (lineNumber: number, side: "LEFT" | "RIGHT", body: string) => {
-      console.log("SideBySideDiff handleAddComment called", { lineNumber, side, body, hasCallback: !!onAddComment });
       return onAddComment?.(file.path, lineNumber, side, body);
     },
     [onAddComment, file.path],

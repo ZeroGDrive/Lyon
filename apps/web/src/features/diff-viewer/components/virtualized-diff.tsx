@@ -136,7 +136,6 @@ function VirtualizedDiff({ file, commentsByLine, onAddComment, scrollToLine, hid
 
   const handleAddComment = useCallback(
     (lineNumber: number, side: "LEFT" | "RIGHT", body: string) => {
-      console.log("VirtualizedDiff handleAddComment called", { lineNumber, side, body, hasCallback: !!onAddComment });
       return onAddComment?.(file.path, lineNumber, side, body);
     },
     [onAddComment, file.path],

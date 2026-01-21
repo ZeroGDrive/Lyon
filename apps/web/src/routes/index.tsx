@@ -337,8 +337,6 @@ function HomeComponent() {
         return;
       }
 
-      console.log("Adding comment:", { filePath, lineNumber, side, body, headSha: selectedPR.headSha });
-
       const result = await addReviewComment(
         selectedPR.repository.fullName,
         selectedPR.number,
@@ -350,7 +348,6 @@ function HomeComponent() {
       );
 
       if (result.success) {
-        console.log("Comment added successfully");
         // Refresh comments after adding
         const commentsResult = await getReviewComments(
           selectedPR.repository.fullName,

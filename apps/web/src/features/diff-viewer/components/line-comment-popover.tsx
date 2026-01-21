@@ -1,7 +1,7 @@
 import type { LineComment } from "@/types";
 
 import { formatDistanceToNow } from "date-fns";
-import { Bot, MessageSquare, Send } from "lucide-react";
+import { Bot, Loader2, MessageSquare, Send } from "lucide-react";
 import { memo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -31,27 +31,14 @@ const LineCommentPopover = memo(function LineCommentPopover({
 
   const hasComments = comments.length > 0;
 
-  // Debug: log when popover opens
-  if (isOpen) {
-    console.log("LineCommentPopover open", { lineNumber, side, hasCallback: !!onAddComment });
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("LineCommentPopover handleSubmit called", { commentValue, hasCallback: !!onAddComment });
-    if (!commentValue.trim() || !onAddComment) {
-      console.log("Early return - no comment or no callback");
-      return;
-    }
+    if (!commentValue.trim() || !onAddComment) return;
 
     setIsSubmitting(true);
     try {
-      console.log("Calling onAddComment with:", commentValue.trim());
       await Promise.resolve(onAddComment(commentValue.trim()));
-      console.log("onAddComment completed");
       setCommentValue("");
-    } catch (err) {
-      console.error("Failed to submit comment:", err);
     } finally {
       setIsSubmitting(false);
     }
@@ -163,8 +150,12 @@ const LineCommentPopover = memo(function LineCommentPopover({
               disabled={!commentValue.trim() || isSubmitting || !onAddComment}
               className="h-7 px-2 text-xs"
             >
-              <Send className="mr-1 size-3" />
-              Comment
+              {isSubmitting ? (
+                <Loader2 className="mr-1 size-3 animate-spin" />
+              ) : (
+                <Send className="mr-1 size-3" />
+              )}
+              {isSubmitting ? "Sending..." : "Comment"}
             </Button>
           </div>
         </form>

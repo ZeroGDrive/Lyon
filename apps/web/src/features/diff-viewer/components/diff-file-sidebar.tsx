@@ -1,6 +1,6 @@
-import type { DiffStatus, FileDiff } from "@/types";
+import type { CommentsByLine, DiffStatus, FileDiff } from "@/types";
 
-import { ChevronDown, ChevronRight, FileCode2, FileMinus2, FilePlus2, Files, FileSymlink, Folder } from "lucide-react";
+import { ChevronDown, ChevronRight, FileCode2, FileMinus2, FilePlus2, Files, FileSymlink, Folder, MessageSquare } from "lucide-react";
 import { memo, useCallback, useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ interface DiffFileSidebarProps {
   files: FileDiff[];
   selectedFile: string | null;
   onSelectFile: (path: string) => void;
+  commentsByLine?: CommentsByLine;
 }
 
 const statusIcons: Record<DiffStatus, React.ElementType> = {
@@ -79,7 +80,18 @@ function sortTreeNodes(nodes: TreeNode[]): TreeNode[] {
   });
 }
 
-function DiffFileSidebar({ files, selectedFile, onSelectFile }: DiffFileSidebarProps) {
+function getCommentCountForFile(path: string, commentsByLine?: CommentsByLine): number {
+  if (!commentsByLine) return 0;
+  let count = 0;
+  for (const [key, comments] of commentsByLine) {
+    if (key.startsWith(`${path}:`)) {
+      count += comments.length;
+    }
+  }
+  return count;
+}
+
+function DiffFileSidebar({ files, selectedFile, onSelectFile, commentsByLine }: DiffFileSidebarProps) {
   const tree = useMemo(() => buildFileTree(files), [files]);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => {
     // Initially expand all folders
@@ -126,6 +138,7 @@ function DiffFileSidebar({ files, selectedFile, onSelectFile }: DiffFileSidebarP
               expandedFolders={expandedFolders}
               onSelectFile={onSelectFile}
               onToggleFolder={toggleFolder}
+              commentsByLine={commentsByLine}
             />
           ))}
         </div>
@@ -141,6 +154,7 @@ interface TreeNodeItemProps {
   expandedFolders: Set<string>;
   onSelectFile: (path: string) => void;
   onToggleFolder: (path: string) => void;
+  commentsByLine?: CommentsByLine;
 }
 
 const TreeNodeItem = memo(function TreeNodeItem({
@@ -150,6 +164,7 @@ const TreeNodeItem = memo(function TreeNodeItem({
   expandedFolders,
   onSelectFile,
   onToggleFolder,
+  commentsByLine,
 }: TreeNodeItemProps) {
   const isExpanded = expandedFolders.has(node.path);
   const paddingLeft = 8 + depth * 16;
@@ -183,6 +198,7 @@ const TreeNodeItem = memo(function TreeNodeItem({
               expandedFolders={expandedFolders}
               onSelectFile={onSelectFile}
               onToggleFolder={onToggleFolder}
+              commentsByLine={commentsByLine}
             />
           ))}
       </>
@@ -193,6 +209,7 @@ const TreeNodeItem = memo(function TreeNodeItem({
   const file = node.file!;
   const Icon = statusIcons[file.status];
   const isSelected = selectedFile === file.path;
+  const commentCount = getCommentCountForFile(file.path, commentsByLine);
 
   return (
     <button
@@ -207,7 +224,13 @@ const TreeNodeItem = memo(function TreeNodeItem({
     >
       <Icon className={cn("size-3.5 shrink-0", statusColors[file.status])} />
       <span className="min-w-0 flex-1 truncate font-mono text-foreground/80">{node.name}</span>
-      <div className="flex shrink-0 items-center gap-1 pr-2 text-[10px] font-medium">
+      <div className="flex shrink-0 items-center gap-1.5 pr-2 text-[10px] font-medium">
+        {commentCount > 0 && (
+          <span className="flex items-center gap-0.5 text-primary">
+            <MessageSquare className="size-3" />
+            {commentCount}
+          </span>
+        )}
         {file.additions > 0 && <span className="text-green-400">+{file.additions}</span>}
         {file.deletions > 0 && <span className="text-red-400">-{file.deletions}</span>}
       </div>

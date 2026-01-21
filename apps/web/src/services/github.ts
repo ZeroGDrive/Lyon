@@ -475,6 +475,8 @@ export async function addReviewComment(
   commitId: string,
   side: "LEFT" | "RIGHT" = "RIGHT",
 ): Promise<CommandResult<Comment>> {
+  // Use the direct comments endpoint
+  // https://docs.github.com/en/rest/pulls/comments#create-a-review-comment-for-a-pull-request
   return runGhCommand<Comment>([
     "api",
     "--method",
@@ -483,15 +485,13 @@ export async function addReviewComment(
     "-f",
     `body=${body}`,
     "-f",
+    `commit_id=${commitId}`,
+    "-f",
     `path=${path}`,
     "-F",
     `line=${line}`,
     "-f",
-    `commit_id=${commitId}`,
-    "-f",
     `side=${side}`,
-    "-f",
-    "subject_type=line",
   ]);
 }
 

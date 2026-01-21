@@ -117,6 +117,7 @@ function DiffViewer({
               files={files}
               selectedFile={selectedFilePath}
               onSelectFile={setSelectedFilePath}
+              commentsByLine={commentsByLine}
             />
 
             <div className="flex-1 overflow-hidden">

@@ -1,7 +1,7 @@
 import type { CommentsByLine, DiffStatus, FileDiff } from "@/types";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChevronDown, FileCode2, FileMinus2, FilePlus2, FileSymlink, Files } from "lucide-react";
+import { ChevronDown, FileCode2, FileMinus2, FilePlus2, FileSymlink, Files, MessageSquare } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -41,6 +41,17 @@ const statusLabels: Record<DiffStatus, string> = {
 
 const HEADER_HEIGHT = 48;
 const LINE_HEIGHT = 24;
+
+function getCommentCountForFile(path: string, commentsByLine?: CommentsByLine): number {
+  if (!commentsByLine) return 0;
+  let count = 0;
+  for (const [key, comments] of commentsByLine) {
+    if (key.startsWith(`${path}:`)) {
+      count += comments.length;
+    }
+  }
+  return count;
+}
 
 function UnifiedDiffView({ files, scrollToFile, commentsByLine, onAddComment }: UnifiedDiffViewProps) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -213,6 +224,7 @@ const FileItem = memo(function FileItem({
   onAddComment,
 }: FileItemProps) {
   const Icon = statusIcons[file.status];
+  const commentCount = getCommentCountForFile(file.path, commentsByLine);
 
   return (
     <div className="border-b border-glass-border-subtle">
@@ -228,10 +240,16 @@ const FileItem = memo(function FileItem({
           )}
         />
         <Icon className={cn("size-4 shrink-0", statusColors[file.status])} />
-        <div className="min-w-0 flex-1">
-          <span className="truncate font-mono text-sm text-foreground">{file.path}</span>
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <span
+            className="block truncate font-mono text-sm text-foreground"
+            style={{ direction: "rtl", textAlign: "left" }}
+            title={file.path}
+          >
+            {file.path}
+          </span>
           {file.oldPath && file.oldPath !== file.path && (
-            <span className="ml-2 text-xs text-muted-foreground">(from {file.oldPath})</span>
+            <span className="text-xs text-muted-foreground">(from {file.oldPath})</span>
           )}
         </div>
         <span
@@ -244,6 +262,12 @@ const FileItem = memo(function FileItem({
           {statusLabels[file.status]}
         </span>
         <div className="flex shrink-0 items-center gap-3 text-xs font-medium">
+          {commentCount > 0 && (
+            <span className="flex items-center gap-1 text-primary">
+              <MessageSquare className="size-3.5" />
+              {commentCount}
+            </span>
+          )}
           {file.additions > 0 && <span className="text-green-400">+{file.additions}</span>}
           {file.deletions > 0 && <span className="text-red-400">-{file.deletions}</span>}
         </div>
