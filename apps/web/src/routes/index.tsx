@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { AppLayout } from "@/components/layout/app-layout";
 import {
@@ -334,8 +335,11 @@ function HomeComponent() {
       "squash",
     );
     if (result.success) {
+      toast.success("Pull request merged successfully");
       await fetchPRs();
       setSelectedPR(null);
+    } else {
+      toast.error("Failed to merge", { description: result.error });
     }
     setActionLoading(null);
   }, [selectedPR, fetchPRs]);
@@ -345,8 +349,11 @@ function HomeComponent() {
     setActionLoading("close");
     const result = await closePullRequest(selectedPR.repository.fullName, selectedPR.number);
     if (result.success) {
+      toast.success("Pull request closed");
       await fetchPRs();
       setSelectedPR(null);
+    } else {
+      toast.error("Failed to close PR", { description: result.error });
     }
     setActionLoading(null);
   }, [selectedPR, fetchPRs]);
@@ -354,20 +361,30 @@ function HomeComponent() {
   const handleApprove = useCallback(async () => {
     if (!selectedPR) return;
     setActionLoading("approve");
-    await approvePullRequest(selectedPR.repository.fullName, selectedPR.number);
-    fetchPRDetails(selectedPR);
+    const result = await approvePullRequest(selectedPR.repository.fullName, selectedPR.number);
+    if (result.success) {
+      toast.success("Pull request approved");
+      await fetchPRDetails(selectedPR);
+    } else {
+      toast.error("Failed to approve", { description: result.error });
+    }
     setActionLoading(null);
   }, [selectedPR, fetchPRDetails]);
 
   const handleRequestChanges = useCallback(async (comment: string) => {
     if (!selectedPR) return;
     setActionLoading("changes");
-    await requestChanges(
+    const result = await requestChanges(
       selectedPR.repository.fullName,
       selectedPR.number,
       comment,
     );
-    fetchPRDetails(selectedPR);
+    if (result.success) {
+      toast.success("Changes requested");
+      await fetchPRDetails(selectedPR);
+    } else {
+      toast.error("Failed to request changes", { description: result.error });
+    }
     setActionLoading(null);
   }, [selectedPR, fetchPRDetails]);
 

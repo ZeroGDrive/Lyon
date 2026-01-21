@@ -1,5 +1,6 @@
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import ReactDOM from "react-dom/client";
+import { Toaster } from "sonner";
 
 import Loader from "./components/loader";
 import { routeTree } from "./routeTree.gen";
@@ -25,5 +26,20 @@ if (!rootElement) {
 
 if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement);
-  root.render(<RouterProvider router={router} />);
+  root.render(
+    <>
+      <RouterProvider router={router} />
+      <Toaster
+        theme="dark"
+        position="bottom-right"
+        toastOptions={{
+          style: {
+            background: "hsl(var(--background))",
+            border: "1px solid hsl(var(--border))",
+            color: "hsl(var(--foreground))",
+          },
+        }}
+      />
+    </>,
+  );
 }
