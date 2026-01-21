@@ -21,7 +21,7 @@ import { VirtualizedDiff } from "./virtualized-diff";
 interface DiffViewerProps {
   files: FileDiff[];
   commentsByLine?: CommentsByLine;
-  onAddComment?: (filePath: string, lineNumber: number, side: "LEFT" | "RIGHT") => void;
+  onAddComment?: (filePath: string, lineNumber: number, side: "LEFT" | "RIGHT", body: string) => void;
   className?: string;
   isLoading?: boolean;
   error?: string | null;
@@ -138,6 +138,8 @@ function DiffViewer({
           <UnifiedDiffView
             files={files}
             scrollToFile={scrollToFile}
+            commentsByLine={commentsByLine}
+            onAddComment={onAddComment}
           />
         )}
       </div>

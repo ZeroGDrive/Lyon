@@ -1,12 +1,15 @@
-import type { DiffHunk, DiffLine, FileDiff } from "@/types";
+import type { CommentsByLine, DiffHunk, DiffLine, FileDiff, LineComment } from "@/types";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { highlightLines, type HighlightedToken } from "@/lib/syntax-highlighter";
+import { LineCommentPopover } from "./line-comment-popover";
 
 interface SideBySideDiffProps {
   file: FileDiff;
+  commentsByLine?: CommentsByLine;
+  onAddComment?: (filePath: string, lineNumber: number, side: "LEFT" | "RIGHT", body: string) => void;
 }
 
 interface AlignedLine {
@@ -73,7 +76,7 @@ function alignHunkLines(hunks: DiffHunk[]): AlignedLine[] {
   return aligned;
 }
 
-function SideBySideDiff({ file }: SideBySideDiffProps) {
+function SideBySideDiff({ file, commentsByLine, onAddComment }: SideBySideDiffProps) {
   const [highlightedTokens, setHighlightedTokens] = useState<Map<string, HighlightedToken[]>>(
     new Map()
   );
@@ -81,6 +84,22 @@ function SideBySideDiff({ file }: SideBySideDiffProps) {
   const rightPanelRef = useRef<HTMLDivElement>(null);
 
   const alignedLines = useMemo(() => alignHunkLines(file.hunks), [file.hunks]);
+
+  const getCommentsForLine = useCallback(
+    (lineNumber: number, side: "LEFT" | "RIGHT"): LineComment[] => {
+      if (!commentsByLine) return [];
+      const key = `${file.path}:${lineNumber}:${side}`;
+      return commentsByLine.get(key) ?? [];
+    },
+    [commentsByLine, file.path],
+  );
+
+  const handleAddComment = useCallback(
+    (lineNumber: number, side: "LEFT" | "RIGHT", body: string) => {
+      onAddComment?.(file.path, lineNumber, side, body);
+    },
+    [onAddComment, file.path],
+  );
 
   // Syntax highlighting
   useEffect(() => {
@@ -130,6 +149,12 @@ function SideBySideDiff({ file }: SideBySideDiffProps) {
               key={index}
               aligned={aligned}
               tokens={highlightedTokens.get(`left-${index}`)}
+              comments={aligned.left?.oldLineNumber ? getCommentsForLine(aligned.left.oldLineNumber, "LEFT") : []}
+              onAddComment={
+                onAddComment && aligned.left?.oldLineNumber
+                  ? (body) => handleAddComment(aligned.left!.oldLineNumber!, "LEFT", body)
+                  : undefined
+              }
             />
           ))}
         </div>
@@ -150,6 +175,12 @@ function SideBySideDiff({ file }: SideBySideDiffProps) {
                   ? highlightedTokens.get(`left-${index}`)
                   : highlightedTokens.get(`right-${index}`)
               }
+              comments={aligned.right?.newLineNumber ? getCommentsForLine(aligned.right.newLineNumber, "RIGHT") : []}
+              onAddComment={
+                onAddComment && aligned.right?.newLineNumber
+                  ? (body) => handleAddComment(aligned.right!.newLineNumber!, "RIGHT", body)
+                  : undefined
+              }
             />
           ))}
         </div>
@@ -161,9 +192,13 @@ function SideBySideDiff({ file }: SideBySideDiffProps) {
 const LeftLine = memo(function LeftLine({
   aligned,
   tokens,
+  comments,
+  onAddComment,
 }: {
   aligned: AlignedLine;
   tokens?: HighlightedToken[];
+  comments: LineComment[];
+  onAddComment?: (body: string) => void;
 }) {
   if (aligned.isHunkHeader) {
     return (
@@ -190,14 +225,13 @@ const LeftLine = memo(function LeftLine({
         isDeletion && "bg-red-500/10"
       )}
     >
-      <span
-        className={cn(
-          "flex w-12 shrink-0 select-none items-center justify-end px-2 border-r border-glass-border-subtle",
-          isDeletion ? "bg-red-950 text-red-500/70" : "text-muted-foreground/50"
-        )}
-      >
-        {line.oldLineNumber}
-      </span>
+      <LineCommentPopover
+        lineNumber={line.oldLineNumber}
+        side="LEFT"
+        comments={comments}
+        onAddComment={onAddComment}
+        lineType={isDeletion ? "deletion" : "context"}
+      />
       <div className="whitespace-pre pl-3 pr-4 leading-6">
         <span
           className={cn(
@@ -216,9 +250,13 @@ const LeftLine = memo(function LeftLine({
 const RightLine = memo(function RightLine({
   aligned,
   tokens,
+  comments,
+  onAddComment,
 }: {
   aligned: AlignedLine;
   tokens?: HighlightedToken[];
+  comments: LineComment[];
+  onAddComment?: (body: string) => void;
 }) {
   if (aligned.isHunkHeader) {
     return (
@@ -245,14 +283,13 @@ const RightLine = memo(function RightLine({
         isAddition && "bg-green-500/10"
       )}
     >
-      <span
-        className={cn(
-          "flex w-12 shrink-0 select-none items-center justify-end px-2 border-r border-glass-border-subtle",
-          isAddition ? "bg-green-950 text-green-500/70" : "text-muted-foreground/50"
-        )}
-      >
-        {line.newLineNumber}
-      </span>
+      <LineCommentPopover
+        lineNumber={line.newLineNumber}
+        side="RIGHT"
+        comments={comments}
+        onAddComment={onAddComment}
+        lineType={isAddition ? "addition" : "context"}
+      />
       <div className="whitespace-pre pl-3 pr-4 leading-6">
         <span
           className={cn(

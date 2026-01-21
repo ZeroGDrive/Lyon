@@ -4,6 +4,7 @@ import type {
   DiffLine as DiffLineType,
   DiffStatus,
   FileDiff,
+  LineComment,
 } from "@/types";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -13,17 +14,17 @@ import {
   FilePlus2,
   FileSymlink,
   Files,
-  MessageSquarePlus,
 } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { highlightLines, type HighlightedToken } from "@/lib/syntax-highlighter";
+import { LineCommentPopover } from "./line-comment-popover";
 
 interface VirtualizedDiffProps {
   file: FileDiff;
   commentsByLine?: CommentsByLine;
-  onAddComment?: (filePath: string, lineNumber: number, side: "LEFT" | "RIGHT") => void;
+  onAddComment?: (filePath: string, lineNumber: number, side: "LEFT" | "RIGHT", body: string) => void;
   scrollToLine?: number | null;
   hideHeader?: boolean;
   /** Render all lines without virtualization (for unified view with external scroll) */
@@ -124,9 +125,21 @@ function VirtualizedDiff({ file, commentsByLine, onAddComment, scrollToLine, hid
     return best || " ";
   }, [flattenedLines]);
 
-  const handleAddComment = (lineNumber: number, side: "LEFT" | "RIGHT") => {
-    onAddComment?.(file.path, lineNumber, side);
-  };
+  const getCommentsForLine = useCallback(
+    (lineNumber: number, side: "LEFT" | "RIGHT"): LineComment[] => {
+      if (!commentsByLine) return [];
+      const key = `${file.path}:${lineNumber}:${side}`;
+      return commentsByLine.get(key) ?? [];
+    },
+    [commentsByLine, file.path],
+  );
+
+  const handleAddComment = useCallback(
+    (lineNumber: number, side: "LEFT" | "RIGHT", body: string) => {
+      onAddComment?.(file.path, lineNumber, side, body);
+    },
+    [onAddComment, file.path],
+  );
 
   return (
     <div data-slot="virtualized-diff" className="flex h-full flex-col">
@@ -182,6 +195,8 @@ function VirtualizedDiff({ file, commentsByLine, onAddComment, scrollToLine, hid
                   <DiffLineRow
                     line={item.line}
                     tokens={tokens}
+                    leftComments={getCommentsForLine(item.line.oldLineNumber ?? 0, "LEFT")}
+                    rightComments={getCommentsForLine(item.line.newLineNumber ?? 0, "RIGHT")}
                     onAddComment={onAddComment ? handleAddComment : undefined}
                   />
                 )}
@@ -233,6 +248,8 @@ function VirtualizedDiff({ file, commentsByLine, onAddComment, scrollToLine, hid
                     <DiffLineRow
                       line={item.line}
                       tokens={tokens}
+                      leftComments={getCommentsForLine(item.line.oldLineNumber ?? 0, "LEFT")}
+                      rightComments={getCommentsForLine(item.line.newLineNumber ?? 0, "RIGHT")}
                       onAddComment={onAddComment ? handleAddComment : undefined}
                     />
                   )}
@@ -259,94 +276,49 @@ const HunkHeader = memo(function HunkHeader({ header }: { header: string }) {
 interface DiffLineRowProps {
   line: DiffLineType;
   tokens?: HighlightedToken[];
-  onAddComment?: (lineNumber: number, side: "LEFT" | "RIGHT") => void;
+  leftComments: LineComment[];
+  rightComments: LineComment[];
+  onAddComment?: (lineNumber: number, side: "LEFT" | "RIGHT", body: string) => void;
 }
 
-const lineTypeStyles: Record<string, string> = {
-  addition: "bg-green-500/10",
-  deletion: "bg-red-500/10",
-  context: "",
-  "hunk-header": "bg-primary/5",
-};
-
-const lineNumberStyles: Record<string, string> = {
-  addition: "text-green-500/70",
-  deletion: "text-red-500/70",
-  context: "text-muted-foreground/50",
-  "hunk-header": "text-muted-foreground/30",
-};
-
-const DiffLineRow = memo(function DiffLineRow({ line, tokens, onAddComment }: DiffLineRowProps) {
+const DiffLineRow = memo(function DiffLineRow({
+  line,
+  tokens,
+  leftComments,
+  rightComments,
+  onAddComment,
+}: DiffLineRowProps) {
   const { type, content, oldLineNumber, newLineNumber } = line;
   const prefix = type === "addition" ? "+" : type === "deletion" ? "-" : " ";
 
-  const handleLineClick = (side: "LEFT" | "RIGHT") => {
-    const lineNum = side === "LEFT" ? oldLineNumber : newLineNumber;
-    if (lineNum !== null && onAddComment) {
-      onAddComment(lineNum, side);
-    }
-  };
-
   return (
-    <div className="group/line flex h-6 items-stretch font-mono text-xs leading-6">
-      <div
-        className={cn(
-          "sticky left-0 z-20 flex w-12 shrink-0 select-none items-center justify-end px-2",
-          "border-r border-glass-border-subtle",
-          lineNumberStyles[type],
-          type === "addition"
-            ? "bg-green-950"
-            : type === "deletion"
-              ? "bg-red-950"
-              : "bg-background",
-        )}
-      >
-        {oldLineNumber !== null && (
-          <button
-            type="button"
-            onClick={() => handleLineClick("LEFT")}
-            disabled={!onAddComment}
-            className={cn(
-              "relative flex h-full w-full items-center justify-end",
-              onAddComment && "cursor-pointer hover:bg-primary/10",
-            )}
-          >
-            <span className="group-hover/line:opacity-0">{oldLineNumber}</span>
-            {onAddComment && (
-              <MessageSquarePlus className="absolute size-3.5 opacity-0 group-hover/line:opacity-100 text-primary" />
-            )}
-          </button>
-        )}
+    <div className="flex h-6 items-stretch font-mono text-xs leading-6">
+      <div className="sticky left-0 z-20">
+        <LineCommentPopover
+          lineNumber={oldLineNumber}
+          side="LEFT"
+          comments={leftComments}
+          onAddComment={
+            onAddComment && oldLineNumber !== null
+              ? (body) => onAddComment(oldLineNumber, "LEFT", body)
+              : undefined
+          }
+          lineType={type === "deletion" ? "deletion" : "context"}
+        />
       </div>
 
-      <div
-        className={cn(
-          "sticky left-12 z-20 flex w-12 shrink-0 select-none items-center justify-end px-2",
-          "border-r border-glass-border-subtle",
-          lineNumberStyles[type],
-          type === "addition"
-            ? "bg-green-950"
-            : type === "deletion"
-              ? "bg-red-950"
-              : "bg-background",
-        )}
-      >
-        {newLineNumber !== null && (
-          <button
-            type="button"
-            onClick={() => handleLineClick("RIGHT")}
-            disabled={!onAddComment}
-            className={cn(
-              "relative flex h-full w-full items-center justify-end",
-              onAddComment && "cursor-pointer hover:bg-primary/10",
-            )}
-          >
-            <span className="group-hover/line:opacity-0">{newLineNumber}</span>
-            {onAddComment && (
-              <MessageSquarePlus className="absolute size-3.5 opacity-0 group-hover/line:opacity-100 text-primary" />
-            )}
-          </button>
-        )}
+      <div className="sticky left-12 z-20">
+        <LineCommentPopover
+          lineNumber={newLineNumber}
+          side="RIGHT"
+          comments={rightComments}
+          onAddComment={
+            onAddComment && newLineNumber !== null
+              ? (body) => onAddComment(newLineNumber, "RIGHT", body)
+              : undefined
+          }
+          lineType={type === "addition" ? "addition" : "context"}
+        />
       </div>
 
       <div className="flex-1 whitespace-pre pl-3 pr-4">

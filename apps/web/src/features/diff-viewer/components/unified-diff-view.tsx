@@ -1,4 +1,4 @@
-import type { DiffStatus, FileDiff } from "@/types";
+import type { CommentsByLine, DiffStatus, FileDiff } from "@/types";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, FileCode2, FileMinus2, FilePlus2, FileSymlink, Files } from "lucide-react";
@@ -11,6 +11,8 @@ import { SideBySideDiff } from "./side-by-side-diff";
 interface UnifiedDiffViewProps {
   files: FileDiff[];
   scrollToFile?: string | null;
+  commentsByLine?: CommentsByLine;
+  onAddComment?: (filePath: string, lineNumber: number, side: "LEFT" | "RIGHT", body: string) => void;
 }
 
 const statusIcons: Record<DiffStatus, React.ElementType> = {
@@ -40,7 +42,7 @@ const statusLabels: Record<DiffStatus, string> = {
 const HEADER_HEIGHT = 48;
 const LINE_HEIGHT = 24;
 
-function UnifiedDiffView({ files, scrollToFile }: UnifiedDiffViewProps) {
+function UnifiedDiffView({ files, scrollToFile, commentsByLine, onAddComment }: UnifiedDiffViewProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(() => {
     return new Set(files.slice(0, 3).map((f) => f.path));
@@ -181,6 +183,8 @@ function UnifiedDiffView({ files, scrollToFile }: UnifiedDiffViewProps) {
                   isExpanded={isExpanded}
                   shouldRender={shouldRender}
                   onToggle={toggleFile}
+                  commentsByLine={commentsByLine}
+                  onAddComment={onAddComment}
                 />
               </div>
             );
@@ -196,6 +200,8 @@ interface FileItemProps {
   isExpanded: boolean;
   shouldRender: boolean;
   onToggle: (path: string) => void;
+  commentsByLine?: CommentsByLine;
+  onAddComment?: (filePath: string, lineNumber: number, side: "LEFT" | "RIGHT", body: string) => void;
 }
 
 const FileItem = memo(function FileItem({
@@ -203,6 +209,8 @@ const FileItem = memo(function FileItem({
   isExpanded,
   shouldRender,
   onToggle,
+  commentsByLine,
+  onAddComment,
 }: FileItemProps) {
   const Icon = statusIcons[file.status];
 
@@ -241,7 +249,13 @@ const FileItem = memo(function FileItem({
         </div>
       </button>
 
-      {isExpanded && shouldRender && <SideBySideDiff file={file} />}
+      {isExpanded && shouldRender && (
+          <SideBySideDiff
+            file={file}
+            commentsByLine={commentsByLine}
+            onAddComment={onAddComment}
+          />
+        )}
     </div>
   );
 });
