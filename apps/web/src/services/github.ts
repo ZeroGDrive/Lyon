@@ -473,6 +473,7 @@ export async function addReviewComment(
   path: string,
   line: number,
   commitId: string,
+  side: "LEFT" | "RIGHT" = "RIGHT",
 ): Promise<CommandResult<Comment>> {
   return runGhCommand<Comment>([
     "api",
@@ -488,8 +489,67 @@ export async function addReviewComment(
     "-f",
     `commit_id=${commitId}`,
     "-f",
-    "side=RIGHT",
+    `side=${side}`,
   ]);
+}
+
+interface GhReviewComment {
+  id: number;
+  body: string;
+  path: string;
+  line: number | null;
+  original_line: number | null;
+  side: "LEFT" | "RIGHT";
+  user: {
+    login: string;
+    avatar_url: string;
+  };
+  created_at: string;
+  updated_at: string;
+  in_reply_to_id?: number;
+}
+
+export async function getReviewComments(
+  repo: string,
+  prNumber: number,
+): Promise<CommandResult<GhReviewComment[]>> {
+  return runGhCommand<GhReviewComment[]>([
+    "api",
+    `repos/${repo}/pulls/${prNumber}/comments`,
+    "--paginate",
+  ]);
+}
+
+export function convertToCommentsByLine(
+  comments: GhReviewComment[],
+): Map<string, import("@/types").LineComment[]> {
+  const commentsByLine = new Map<string, import("@/types").LineComment[]>();
+
+  for (const comment of comments) {
+    const lineNumber = comment.line ?? comment.original_line;
+    if (!lineNumber || !comment.path) continue;
+
+    const key = `${comment.path}:${lineNumber}:${comment.side}`;
+    const existing = commentsByLine.get(key) ?? [];
+
+    existing.push({
+      id: String(comment.id),
+      path: comment.path,
+      line: lineNumber,
+      side: comment.side,
+      body: comment.body,
+      author: {
+        login: comment.user.login,
+        avatarUrl: comment.user.avatar_url,
+      },
+      createdAt: comment.created_at,
+      isAIGenerated: false,
+    });
+
+    commentsByLine.set(key, existing);
+  }
+
+  return commentsByLine;
 }
 
 export async function mergePullRequest(

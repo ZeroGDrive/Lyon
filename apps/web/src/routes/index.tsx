@@ -1,4 +1,4 @@
-import type { AIProvider, FileDiff, PullRequest, Repository } from "@/types";
+import type { AIProvider, CommentsByLine, FileDiff, PullRequest, Repository } from "@/types";
 
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -29,11 +29,14 @@ import { DiffViewer } from "@/features/diff-viewer";
 import { PRDetail, PRList } from "@/features/pull-requests";
 import { parseDiff } from "@/lib/parse-diff";
 import {
+  addReviewComment,
   approvePullRequest,
   closePullRequest,
+  convertToCommentsByLine,
   fetchPRsForRepos,
   getPullRequest,
   getPullRequestDiff,
+  getReviewComments,
   getUserRepositories,
   mergePullRequest,
   requestChanges,
@@ -57,6 +60,7 @@ function HomeComponent() {
   const [pullRequests, setPullRequests] = useState<Map<string, PullRequest[]>>(new Map());
   const [selectedPR, setSelectedPR] = useState<PullRequest | null>(null);
   const [diffFiles, setDiffFiles] = useState<FileDiff[]>([]);
+  const [commentsByLine, setCommentsByLine] = useState<CommentsByLine>(new Map());
   const [selectedDiffFile, setSelectedDiffFile] = useState<string | null>(null);
   const [scrollToLine, setScrollToLine] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -154,9 +158,10 @@ function HomeComponent() {
     setDiffError(null);
 
     try {
-      const [detailsResult, diffResult] = await Promise.all([
+      const [detailsResult, diffResult, commentsResult] = await Promise.all([
         getPullRequest(pr.repository.fullName, pr.number),
         getPullRequestDiff(pr.repository.fullName, pr.number),
+        getReviewComments(pr.repository.fullName, pr.number),
       ]);
 
       if (detailsResult.success && detailsResult.data) {
@@ -187,6 +192,12 @@ function HomeComponent() {
       } else {
         setDiffFiles([]);
         setDiffError(diffResult.error ?? "Failed to fetch diff");
+      }
+
+      if (commentsResult.success && commentsResult.data) {
+        setCommentsByLine(convertToCommentsByLine(commentsResult.data));
+      } else {
+        setCommentsByLine(new Map());
       }
     } catch (err) {
       console.error("Failed to fetch PR details:", err);
@@ -314,6 +325,36 @@ function HomeComponent() {
     setActionLoading(null);
   }, [selectedPR, fetchPRDetails]);
 
+  const handleAddComment = useCallback(
+    async (filePath: string, lineNumber: number, side: "LEFT" | "RIGHT", body: string) => {
+      if (!selectedPR) return;
+
+      const result = await addReviewComment(
+        selectedPR.repository.fullName,
+        selectedPR.number,
+        body,
+        filePath,
+        lineNumber,
+        selectedPR.headSha,
+        side,
+      );
+
+      if (result.success) {
+        // Refresh comments after adding
+        const commentsResult = await getReviewComments(
+          selectedPR.repository.fullName,
+          selectedPR.number,
+        );
+        if (commentsResult.success && commentsResult.data) {
+          setCommentsByLine(convertToCommentsByLine(commentsResult.data));
+        }
+      } else {
+        console.error("Failed to add comment:", result.error);
+      }
+    },
+    [selectedPR],
+  );
+
   const totalPRs = Array.from(pullRequests.values()).reduce((sum, prs) => sum + prs.length, 0);
 
   const filteredUserRepos = userRepos.filter(
@@ -433,10 +474,8 @@ function HomeComponent() {
                     setScrollToLine(null); // Clear scroll position when manually selecting file
                   }}
                   scrollToLine={scrollToLine}
-                  onAddComment={(filePath, lineNumber, side, body) => {
-                    console.log("Add comment:", { filePath, lineNumber, side, body });
-                    // TODO: Implement comment persistence
-                  }}
+                  commentsByLine={commentsByLine}
+                  onAddComment={handleAddComment}
                 />
               </div>
 
