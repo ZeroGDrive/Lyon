@@ -12,7 +12,7 @@ interface LineCommentPopoverProps {
   lineNumber: number | null;
   side: "LEFT" | "RIGHT";
   comments: LineComment[];
-  onAddComment?: (body: string) => void;
+  onAddComment?: (body: string) => void | Promise<void>;
   className?: string;
   lineType?: "addition" | "deletion" | "context";
 }
@@ -37,8 +37,10 @@ const LineCommentPopover = memo(function LineCommentPopover({
 
     setIsSubmitting(true);
     try {
-      onAddComment(commentValue.trim());
+      await Promise.resolve(onAddComment(commentValue.trim()));
       setCommentValue("");
+    } catch (err) {
+      console.error("Failed to submit comment:", err);
     } finally {
       setIsSubmitting(false);
     }

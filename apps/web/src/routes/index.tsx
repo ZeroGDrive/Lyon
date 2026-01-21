@@ -327,7 +327,17 @@ function HomeComponent() {
 
   const handleAddComment = useCallback(
     async (filePath: string, lineNumber: number, side: "LEFT" | "RIGHT", body: string) => {
-      if (!selectedPR) return;
+      if (!selectedPR) {
+        console.error("No PR selected");
+        return;
+      }
+
+      if (!selectedPR.headSha) {
+        console.error("No headSha available for PR");
+        return;
+      }
+
+      console.log("Adding comment:", { filePath, lineNumber, side, body, headSha: selectedPR.headSha });
 
       const result = await addReviewComment(
         selectedPR.repository.fullName,
@@ -340,6 +350,7 @@ function HomeComponent() {
       );
 
       if (result.success) {
+        console.log("Comment added successfully");
         // Refresh comments after adding
         const commentsResult = await getReviewComments(
           selectedPR.repository.fullName,

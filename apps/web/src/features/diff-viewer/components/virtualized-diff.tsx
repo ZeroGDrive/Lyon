@@ -278,7 +278,7 @@ interface DiffLineRowProps {
   tokens?: HighlightedToken[];
   leftComments: LineComment[];
   rightComments: LineComment[];
-  onAddComment?: (lineNumber: number, side: "LEFT" | "RIGHT", body: string) => void;
+  onAddComment?: (lineNumber: number, side: "LEFT" | "RIGHT", body: string) => void | Promise<void>;
 }
 
 const DiffLineRow = memo(function DiffLineRow({
