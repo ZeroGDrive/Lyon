@@ -4,11 +4,13 @@ import { DEFAULT_SYSTEM_PROMPTS } from "@/types";
 import {
   AlertCircle,
   Bot,
+  Check,
   CheckCircle,
   ChevronDown,
   ChevronRight,
   FileCode2,
   Loader2,
+  Send,
   Sparkles,
   Square,
   XCircle,
@@ -37,6 +39,7 @@ interface AIReviewPanelProps {
   onCancelReview?: () => void;
   isLoading?: boolean;
   onCommentClick?: (filePath: string, line: number) => void;
+  onPostComment?: (comment: AIReviewComment) => Promise<boolean>;
 }
 
 function AIReviewPanel({
@@ -46,6 +49,7 @@ function AIReviewPanel({
   onCancelReview,
   isLoading,
   onCommentClick,
+  onPostComment,
 }: AIReviewPanelProps) {
   const { config, setProvider, setSystemPrompt, getReviewsForPR, getActiveReviewForProvider } =
     useReviewStore();
@@ -183,7 +187,12 @@ function AIReviewPanel({
       )}
 
       {!isLoading && latestReview && (
-        <ReviewResultCard review={latestReview} onCommentClick={onCommentClick} className="min-h-0 flex-1" />
+        <ReviewResultCard
+          review={latestReview}
+          onCommentClick={onCommentClick}
+          onPostComment={onPostComment}
+          className="min-h-0 flex-1"
+        />
       )}
     </div>
   );
@@ -192,10 +201,11 @@ function AIReviewPanel({
 interface AIReviewResultCardProps {
   review: AIReviewResultType;
   onCommentClick?: (filePath: string, line: number) => void;
+  onPostComment?: (comment: AIReviewComment) => Promise<boolean>;
   className?: string;
 }
 
-function ReviewResultCard({ review, onCommentClick, className }: AIReviewResultCardProps) {
+function ReviewResultCard({ review, onCommentClick, onPostComment, className }: AIReviewResultCardProps) {
   const statusIcon =
     review.status === "completed" ? (
       <CheckCircle className="size-4 text-foreground" />
@@ -236,7 +246,11 @@ function ReviewResultCard({ review, onCommentClick, className }: AIReviewResultC
               <h4 className="mb-2 text-xs font-medium text-muted-foreground">
                 Comments ({review.comments.length})
               </h4>
-              <ReviewCommentsGrouped comments={review.comments} onCommentClick={onCommentClick} />
+              <ReviewCommentsGrouped
+                comments={review.comments}
+                onCommentClick={onCommentClick}
+                onPostComment={onPostComment}
+              />
             </div>
           )}
 
@@ -261,10 +275,13 @@ function ReviewResultCard({ review, onCommentClick, className }: AIReviewResultC
 interface ReviewCommentsGroupedProps {
   comments: AIReviewComment[];
   onCommentClick?: (filePath: string, line: number) => void;
+  onPostComment?: (comment: AIReviewComment) => Promise<boolean>;
 }
 
-function ReviewCommentsGrouped({ comments, onCommentClick }: ReviewCommentsGroupedProps) {
+function ReviewCommentsGrouped({ comments, onCommentClick, onPostComment }: ReviewCommentsGroupedProps) {
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
+  const [postingCommentId, setPostingCommentId] = useState<string | null>(null);
+  const [postedCommentIds, setPostedCommentIds] = useState<Set<string>>(new Set());
 
   const commentsByFile = useMemo(() => {
     const grouped = new Map<string, AIReviewComment[]>();
@@ -286,6 +303,18 @@ function ReviewCommentsGrouped({ comments, onCommentClick }: ReviewCommentsGroup
       }
       return next;
     });
+  };
+
+  const handlePostComment = async (comment: AIReviewComment, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onPostComment || postingCommentId || postedCommentIds.has(comment.id)) return;
+
+    setPostingCommentId(comment.id);
+    const success = await onPostComment(comment);
+    if (success) {
+      setPostedCommentIds((prev) => new Set(prev).add(comment.id));
+    }
+    setPostingCommentId(null);
   };
 
   const severityColors: Record<string, string> = {
@@ -350,42 +379,81 @@ function ReviewCommentsGrouped({ comments, onCommentClick }: ReviewCommentsGroup
                 <div className="border-t border-glass-border-subtle">
                   {fileComments
                     .sort((a, b) => a.line - b.line)
-                    .map((comment) => (
-                      <button
-                        key={comment.id}
-                        type="button"
-                        onClick={() => onCommentClick?.(comment.path, comment.line)}
-                        className={cn(
-                          "w-full border-l-2 px-3 py-2 text-left transition-colors hover:bg-glass-highlight",
-                          severityBorderColors[comment.severity] ?? "border-muted-foreground/30",
-                        )}
-                      >
-                        <div className="mb-1 flex items-center gap-2">
-                          <span className="font-mono text-[10px] text-muted-foreground">
-                            Line {comment.line}
-                          </span>
-                          <span
-                            className={cn(
-                              "rounded-full border px-1.5 py-0.5 text-[10px] font-medium capitalize",
-                              severityColors[comment.severity] ?? "bg-muted text-muted-foreground",
+                    .map((comment) => {
+                      const isPosting = postingCommentId === comment.id;
+                      const isPosted = postedCommentIds.has(comment.id);
+
+                      return (
+                        <div
+                          key={comment.id}
+                          className={cn(
+                            "border-l-2 px-3 py-2 transition-colors hover:bg-glass-highlight",
+                            severityBorderColors[comment.severity] ?? "border-muted-foreground/30",
+                          )}
+                        >
+                          <div className="mb-1 flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={() => onCommentClick?.(comment.path, comment.line)}
+                              className="flex items-center gap-2"
+                            >
+                              <span className="font-mono text-[10px] text-muted-foreground">
+                                Line {comment.line}
+                              </span>
+                              <span
+                                className={cn(
+                                  "rounded-full border px-1.5 py-0.5 text-[10px] font-medium capitalize",
+                                  severityColors[comment.severity] ?? "bg-muted text-muted-foreground",
+                                )}
+                              >
+                                {comment.severity}
+                              </span>
+                            </button>
+                            {onPostComment && (
+                              <button
+                                type="button"
+                                onClick={(e) => handlePostComment(comment, e)}
+                                disabled={isPosting || isPosted}
+                                className={cn(
+                                  "flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors",
+                                  isPosted
+                                    ? "bg-green-500/20 text-green-400"
+                                    : "bg-primary/10 text-primary hover:bg-primary/20",
+                                  (isPosting || isPosted) && "cursor-default",
+                                )}
+                                title={isPosted ? "Posted to GitHub" : "Post comment to GitHub"}
+                              >
+                                {isPosting ? (
+                                  <Loader2 className="size-3 animate-spin" />
+                                ) : isPosted ? (
+                                  <Check className="size-3" />
+                                ) : (
+                                  <Send className="size-3" />
+                                )}
+                                {isPosted ? "Posted" : isPosting ? "Posting..." : "Post"}
+                              </button>
                             )}
-                          >
-                            {comment.severity}
-                          </span>
-                        </div>
-                        <p className="text-xs text-foreground/80">{comment.body}</p>
-                        {comment.suggestion && (
-                          <div className="mt-2 rounded bg-glass-bg p-2">
-                            <p className="font-mono text-[10px] text-muted-foreground">
-                              Suggestion:
-                            </p>
-                            <pre className="mt-1 whitespace-pre-wrap text-[10px] text-foreground/70">
-                              {comment.suggestion}
-                            </pre>
                           </div>
-                        )}
-                      </button>
-                    ))}
+                          <button
+                            type="button"
+                            onClick={() => onCommentClick?.(comment.path, comment.line)}
+                            className="w-full text-left"
+                          >
+                            <p className="text-xs text-foreground/80">{comment.body}</p>
+                            {comment.suggestion && (
+                              <div className="mt-2 rounded bg-glass-bg p-2">
+                                <p className="font-mono text-[10px] text-muted-foreground">
+                                  Suggestion:
+                                </p>
+                                <pre className="mt-1 whitespace-pre-wrap text-[10px] text-foreground/70">
+                                  {comment.suggestion}
+                                </pre>
+                              </div>
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })}
                 </div>
               )}
             </div>

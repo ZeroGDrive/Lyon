@@ -1,14 +1,16 @@
-import type { AIProvider, Comment, CommentsByLine, FileDiff, PullRequest, Repository } from "@/types";
+import type { AIProvider, AIReviewComment, Comment, CommentsByLine, FileDiff, PullRequest, Repository } from "@/types";
 
 import { createFileRoute } from "@tanstack/react-router";
 import {
   AlertCircle,
+  Building2,
   FolderGit2,
   Loader2,
   Plus,
   RefreshCw,
   Settings,
   Trash2,
+  User,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -34,10 +36,12 @@ import {
   closePullRequest,
   convertToCommentsByLine,
   fetchPRsForRepos,
+  getOrganizationRepositories,
   getPullRequest,
   getPullRequestComments,
   getPullRequestDiff,
   getReviewComments,
+  getUserOrganizations,
   getUserRepositories,
   mergePullRequest,
   requestChanges,
@@ -76,6 +80,12 @@ function HomeComponent() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showAddRepo, setShowAddRepo] = useState(false);
   const [repoInput, setRepoInput] = useState("");
+  const [repoTab, setRepoTab] = useState<"personal" | "organizations">("personal");
+  const [organizations, setOrganizations] = useState<{ login: string; description: string | null }[]>([]);
+  const [selectedOrg, setSelectedOrg] = useState<string | null>(null);
+  const [orgRepos, setOrgRepos] = useState<Repository[]>([]);
+  const [isLoadingOrgs, setIsLoadingOrgs] = useState(false);
+  const [isLoadingOrgRepos, setIsLoadingOrgRepos] = useState(false);
 
   const { config, addReview, updateReview } = useReviewStore();
 
@@ -130,11 +140,38 @@ function HomeComponent() {
     setIsLoadingUserRepos(false);
   }, []);
 
+  const fetchOrganizations = useCallback(async () => {
+    setIsLoadingOrgs(true);
+    const result = await getUserOrganizations();
+    if (result.success && result.data) {
+      setOrganizations(result.data);
+    }
+    setIsLoadingOrgs(false);
+  }, []);
+
+  const fetchOrgRepos = useCallback(async (org: string) => {
+    setIsLoadingOrgRepos(true);
+    const result = await getOrganizationRepositories(org, 100);
+    if (result.success && result.data) {
+      setOrgRepos(result.data);
+    }
+    setIsLoadingOrgRepos(false);
+  }, []);
+
   useEffect(() => {
     if (showAddRepo && userRepos.length === 0) {
       fetchUserRepos();
     }
-  }, [showAddRepo, userRepos.length, fetchUserRepos]);
+    if (showAddRepo && organizations.length === 0) {
+      fetchOrganizations();
+    }
+  }, [showAddRepo, userRepos.length, organizations.length, fetchUserRepos, fetchOrganizations]);
+
+  useEffect(() => {
+    if (selectedOrg) {
+      fetchOrgRepos(selectedOrg);
+    }
+  }, [selectedOrg, fetchOrgRepos]);
 
   const handleAddRepo = useCallback(
     (repoFullName: string) => {
@@ -372,9 +409,54 @@ function HomeComponent() {
     [selectedPR],
   );
 
+  const handlePostAIComment = useCallback(
+    async (comment: AIReviewComment): Promise<boolean> => {
+      if (!selectedPR || !selectedPR.headSha) {
+        return false;
+      }
+
+      // Format the comment body with severity badge and suggestion
+      let body = `**[${comment.severity.toUpperCase()}]** ${comment.body}`;
+      if (comment.suggestion) {
+        body += `\n\n**Suggestion:**\n\`\`\`\n${comment.suggestion}\n\`\`\``;
+      }
+      body += `\n\n---\n*🤖 AI Review Comment*`;
+
+      const result = await addReviewComment(
+        selectedPR.repository.fullName,
+        selectedPR.number,
+        body,
+        comment.path,
+        comment.line,
+        selectedPR.headSha,
+        comment.side,
+      );
+
+      if (result.success) {
+        // Refresh comments after adding
+        const commentsResult = await getReviewComments(
+          selectedPR.repository.fullName,
+          selectedPR.number,
+        );
+        if (commentsResult.success && commentsResult.data) {
+          setCommentsByLine(convertToCommentsByLine(commentsResult.data));
+        }
+        return true;
+      }
+      return false;
+    },
+    [selectedPR],
+  );
+
   const totalPRs = Array.from(pullRequests.values()).reduce((sum, prs) => sum + prs.length, 0);
 
   const filteredUserRepos = userRepos.filter(
+    (r) =>
+      !watchedRepos.includes(r.fullName) &&
+      r.fullName.toLowerCase().includes(repoInput.toLowerCase()),
+  );
+
+  const filteredOrgRepos = orgRepos.filter(
     (r) =>
       !watchedRepos.includes(r.fullName) &&
       r.fullName.toLowerCase().includes(repoInput.toLowerCase()),
@@ -514,6 +596,7 @@ function HomeComponent() {
                     setSelectedDiffFile(filePath);
                     setScrollToLine(line);
                   }}
+                  onPostComment={handlePostAIComment}
                 />
               </div>
             </div>
@@ -629,66 +712,194 @@ function HomeComponent() {
                 <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
                   Watched Repositories
                 </label>
-                <ScrollArea orientation="vertical" className="max-h-32">
-                  <div className="space-y-1">
-                    {watchedRepos.map((repo) => (
-                      <div
-                        key={repo}
-                        className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-sm"
-                      >
-                        <span className="truncate">{repo}</span>
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={() => handleRemoveRepo(repo)}
+                <div className="max-h-32 rounded-lg border border-glass-border-subtle">
+                  <ScrollArea orientation="vertical" className="h-full max-h-32">
+                    <div className="space-y-1 p-1">
+                      {watchedRepos.map((repo) => (
+                        <div
+                          key={repo}
+                          className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-sm"
                         >
-                          <Trash2 className="size-3 text-destructive" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
+                          <span className="truncate">{repo}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => handleRemoveRepo(repo)}
+                          >
+                            <Trash2 className="size-3 text-destructive" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
               </div>
             )}
 
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                Your Repositories
-              </label>
-              {isLoadingUserRepos ? (
-                <div className="flex items-center justify-center py-4">
-                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
-                </div>
-              ) : (
-                <ScrollArea orientation="vertical" className="max-h-48">
-                  <div className="space-y-1">
-                    {filteredUserRepos.slice(0, 20).map((repo) => (
-                      <button
-                        key={repo.id}
-                        type="button"
-                        onClick={() => handleAddRepo(repo.fullName)}
-                        className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate font-medium">{repo.fullName}</div>
-                          {repo.description && (
-                            <div className="truncate text-xs text-muted-foreground">
-                              {repo.description}
+            {/* Tabs for Personal/Organizations */}
+            <div className="mb-3 flex gap-1 rounded-lg bg-muted/50 p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setRepoTab("personal");
+                  setSelectedOrg(null);
+                }}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  repoTab === "personal"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <User className="size-3.5" />
+                Personal
+              </button>
+              <button
+                type="button"
+                onClick={() => setRepoTab("organizations")}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  repoTab === "organizations"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Building2 className="size-3.5" />
+                Organizations
+              </button>
+            </div>
+
+            {repoTab === "personal" ? (
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                  Your Repositories
+                </label>
+                {isLoadingUserRepos ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <div className="h-48 rounded-lg border border-glass-border-subtle">
+                    <ScrollArea orientation="vertical" className="h-full">
+                      <div className="space-y-1 p-1">
+                        {filteredUserRepos.slice(0, 20).map((repo) => (
+                          <button
+                            key={repo.id}
+                            type="button"
+                            onClick={() => handleAddRepo(repo.fullName)}
+                            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-medium">{repo.fullName}</div>
+                              {repo.description && (
+                                <div className="truncate text-xs text-muted-foreground">
+                                  {repo.description}
+                                </div>
+                              )}
                             </div>
-                          )}
+                            <Plus className="ml-2 size-4 shrink-0 text-muted-foreground" />
+                          </button>
+                        ))}
+                        {filteredUserRepos.length === 0 && (
+                          <p className="py-4 text-center text-xs text-muted-foreground">
+                            {repoInput ? "No matching repositories" : "No repositories available"}
+                          </p>
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* Organization selector */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    Select Organization
+                  </label>
+                  {isLoadingOrgs ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : organizations.length === 0 ? (
+                    <p className="py-4 text-center text-xs text-muted-foreground">
+                      No organizations found
+                    </p>
+                  ) : (
+                    <div className="h-32 rounded-lg border border-glass-border-subtle">
+                      <ScrollArea orientation="vertical" className="h-full">
+                        <div className="space-y-1 p-1">
+                          {organizations.map((org) => (
+                            <button
+                              key={org.login}
+                              type="button"
+                              onClick={() => setSelectedOrg(org.login)}
+                              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                                selectedOrg === org.login
+                                  ? "bg-primary/10 text-primary"
+                                  : "hover:bg-muted"
+                              }`}
+                            >
+                              <Building2 className="size-4 shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate font-medium">{org.login}</div>
+                                {org.description && (
+                                  <div className="truncate text-xs text-muted-foreground">
+                                    {org.description}
+                                  </div>
+                                )}
+                              </div>
+                            </button>
+                          ))}
                         </div>
-                        <Plus className="ml-2 size-4 shrink-0 text-muted-foreground" />
-                      </button>
-                    ))}
-                    {filteredUserRepos.length === 0 && (
-                      <p className="py-4 text-center text-xs text-muted-foreground">
-                        {repoInput ? "No matching repositories" : "No repositories available"}
-                      </p>
+                      </ScrollArea>
+                    </div>
+                  )}
+                </div>
+
+                {/* Organization repos */}
+                {selectedOrg && (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                      {selectedOrg} Repositories
+                    </label>
+                    {isLoadingOrgRepos ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : (
+                      <div className="h-40 rounded-lg border border-glass-border-subtle">
+                        <ScrollArea orientation="vertical" className="h-full">
+                          <div className="space-y-1 p-1">
+                            {filteredOrgRepos.slice(0, 20).map((repo) => (
+                              <button
+                                key={repo.id}
+                                type="button"
+                                onClick={() => handleAddRepo(repo.fullName)}
+                                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate font-medium">{repo.name}</div>
+                                  {repo.description && (
+                                    <div className="truncate text-xs text-muted-foreground">
+                                      {repo.description}
+                                    </div>
+                                  )}
+                                </div>
+                                <Plus className="ml-2 size-4 shrink-0 text-muted-foreground" />
+                              </button>
+                            ))}
+                            {filteredOrgRepos.length === 0 && (
+                              <p className="py-4 text-center text-xs text-muted-foreground">
+                                {repoInput ? "No matching repositories" : "No repositories available"}
+                              </p>
+                            )}
+                          </div>
+                        </ScrollArea>
+                      </div>
                     )}
                   </div>
-                </ScrollArea>
-              )}
-            </div>
+                )}
+              </div>
+            )}
 
             <div className="mt-4 flex justify-end">
               <Button variant="outline" onClick={() => setShowAddRepo(false)}>

@@ -718,6 +718,66 @@ export async function getUserRepositories(limit = 50): Promise<CommandResult<Rep
   return { success: false, error: result.error };
 }
 
+interface GhOrgResult {
+  login: string;
+  description: string | null;
+  url: string;
+}
+
+export async function getUserOrganizations(): Promise<CommandResult<{ login: string; description: string | null }[]>> {
+  const result = await runGhCommand<GhOrgResult[]>([
+    "api",
+    "user/orgs",
+    "--paginate",
+  ]);
+
+  if (result.success && result.data) {
+    return {
+      success: true,
+      data: result.data.map((org) => ({
+        login: org.login,
+        description: org.description,
+      })),
+    };
+  }
+
+  return { success: false, error: result.error };
+}
+
+export async function getOrganizationRepositories(
+  org: string,
+  limit = 100,
+): Promise<CommandResult<Repository[]>> {
+  const result = await runGhCommand<GhRepoResult[]>([
+    "repo",
+    "list",
+    org,
+    "--json",
+    "name,nameWithOwner,description,url,defaultBranchRef,isPrivate,updatedAt,owner",
+    "--limit",
+    String(limit),
+  ]);
+
+  if (result.success && result.data) {
+    return {
+      success: true,
+      data: result.data.map((r) => ({
+        id: r.nameWithOwner,
+        name: r.name,
+        fullName: r.nameWithOwner,
+        owner: r.owner.login,
+        description: r.description,
+        url: r.url,
+        defaultBranch: r.defaultBranchRef?.name ?? "main",
+        isPrivate: r.isPrivate,
+        updatedAt: r.updatedAt,
+      })),
+    };
+  }
+
+  return { success: false, error: result.error };
+}
+
 interface GhPRListResult {
   id: string;
   number: number;
