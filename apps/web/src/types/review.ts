@@ -1,5 +1,35 @@
 export type AIProvider = "claude" | "codex";
 
+export type ClaudeModel = "claude-sonnet-4-20250514" | "claude-opus-4-20250514";
+export type CodexModel = "o3" | "o4-mini" | "codex-1";
+
+export interface AIModelConfig {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export const CLAUDE_MODELS: AIModelConfig[] = [
+  { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", description: "Fast and efficient" },
+  { id: "claude-opus-4-20250514", name: "Claude Opus 4", description: "Most capable" },
+];
+
+export const CODEX_MODELS: AIModelConfig[] = [
+  { id: "o4-mini", name: "o4-mini", description: "Fast and efficient" },
+  { id: "o3", name: "o3", description: "Most capable" },
+  { id: "codex-1", name: "Codex 1", description: "Optimized for code" },
+];
+
+export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelConfig[]> = {
+  claude: CLAUDE_MODELS,
+  codex: CODEX_MODELS,
+};
+
+export const DEFAULT_MODELS: Record<AIProvider, string> = {
+  claude: "claude-sonnet-4-20250514",
+  codex: "o4-mini",
+};
+
 export interface AIReviewConfig {
   provider: AIProvider;
   model?: string;

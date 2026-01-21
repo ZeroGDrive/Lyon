@@ -40,22 +40,27 @@ interface ProviderConfig {
   useStdin: boolean;
 }
 
-function getProviderConfig(provider: AIProvider, prompt: string): ProviderConfig {
+function getProviderConfig(provider: AIProvider, model: string | undefined, prompt: string): ProviderConfig {
   switch (provider) {
-    case "claude":
+    case "claude": {
       // Use json output format - simpler and more reliable than stream-json
       // The CLI will output the final result as JSON when complete
-      return {
-        args: ["-p", prompt, "--allowedTools", "Bash(gh:*)", "--output-format", "json"],
-        useStdin: false,
-      };
-    case "codex":
+      const args = ["-p", prompt, "--allowedTools", "Bash(gh:*)", "--output-format", "json"];
+      if (model) {
+        args.unshift("--model", model);
+      }
+      return { args, useStdin: false };
+    }
+    case "codex": {
       // Use exec subcommand for non-interactive mode with JSON output
       // --sandbox danger-full-access allows network access for gh CLI
-      return {
-        args: ["exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access", prompt],
-        useStdin: false,
-      };
+      const args = ["exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access"];
+      if (model) {
+        args.push("--model", model);
+      }
+      args.push(prompt);
+      return { args, useStdin: false };
+    }
   }
 }
 
@@ -69,9 +74,9 @@ export async function startStreamingAIReview(
 
   const command = getProviderCommand(config.provider);
   const prompt = buildReviewPrompt(prInfo, config.systemPrompt);
-  const providerConfig = getProviderConfig(config.provider, prompt);
+  const providerConfig = getProviderConfig(config.provider, config.model, prompt);
 
-  console.log("[AI Review] Starting review with provider:", config.provider);
+  console.log("[AI Review] Starting review with provider:", config.provider, "model:", config.model);
   console.log("[AI Review] Command:", command);
   console.log("[AI Review] PR:", prInfo.repository, "#", prInfo.number);
   console.log("[AI Review] Full prompt:\n", prompt);

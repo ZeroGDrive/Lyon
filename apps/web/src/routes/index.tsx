@@ -266,7 +266,7 @@ function HomeComponent() {
   );
 
   const handleStartReview = useCallback(
-    async (provider: AIProvider, systemPrompt: string) => {
+    async (provider: AIProvider, model: string, systemPrompt: string) => {
       if (!selectedPR) return;
 
       setIsReviewing(true);
@@ -281,7 +281,7 @@ function HomeComponent() {
 
       const abort = await startStreamingAIReview(
         { number: selectedPR.number, repository: selectedPR.repository.fullName },
-        { provider, systemPrompt },
+        { provider, model, systemPrompt },
         {
           onThinkingStart: () => {},
           onThinkingDelta: () => {},

@@ -1,5 +1,5 @@
 import type { AIProvider, AIReviewComment, AIReviewResult as AIReviewResultType } from "@/types";
-import { DEFAULT_SYSTEM_PROMPTS } from "@/types";
+import { DEFAULT_SYSTEM_PROMPTS, MODELS_BY_PROVIDER } from "@/types";
 
 import {
   AlertCircle,
@@ -35,7 +35,7 @@ import { useReviewStore } from "@/stores";
 interface AIReviewPanelProps {
   prNumber: number;
   repository: string;
-  onStartReview: (provider: AIProvider, systemPrompt: string) => void;
+  onStartReview: (provider: AIProvider, model: string, systemPrompt: string) => void;
   onCancelReview?: () => void;
   isLoading?: boolean;
   onCommentClick?: (filePath: string, line: number) => void;
@@ -51,7 +51,7 @@ function AIReviewPanel({
   onCommentClick,
   onPostComment,
 }: AIReviewPanelProps) {
-  const { config, setProvider, setSystemPrompt, getReviewsForPR, getActiveReviewForProvider } =
+  const { config, setProvider, setModel, setSystemPrompt, getReviewsForPR, getActiveReviewForProvider } =
     useReviewStore();
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [promptTemplate, setPromptTemplate] = useState<string>("default");
@@ -82,7 +82,7 @@ function AIReviewPanel({
   };
 
   const handleStartReview = () => {
-    onStartReview(config.provider, config.systemPrompt);
+    onStartReview(config.provider, config.model ?? "", config.systemPrompt);
   };
 
   return (
@@ -125,6 +125,30 @@ function AIReviewPanel({
                   )}
                 >
                   {provider}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Model
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {MODELS_BY_PROVIDER[config.provider].map((model) => (
+                <button
+                  key={model.id}
+                  type="button"
+                  onClick={() => setModel(model.id)}
+                  title={model.description}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                    config.model === model.id
+                      ? "bg-primary/20 text-primary ring-1 ring-primary/30"
+                      : "bg-glass-bg-subtle text-muted-foreground hover:bg-glass-highlight hover:text-foreground",
+                  )}
+                >
+                  {model.name}
                 </button>
               ))}
             </div>
