@@ -1,5 +1,5 @@
-import type { AIProvider, AIReviewConfig, AIReviewResult, ReviewFocusArea } from "@/types";
-import { DEFAULT_MODELS, DEFAULT_SYSTEM_PROMPTS } from "@/types";
+import type { AIProvider, AIReviewConfig, AIReviewResult, CodexReasoningEffort, ReviewFocusArea } from "@/types";
+import { DEFAULT_MODELS, DEFAULT_REASONING_EFFORT, DEFAULT_SYSTEM_PROMPTS } from "@/types";
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -17,6 +17,7 @@ interface ReviewState {
   setConfig: (config: Partial<AIReviewConfig>) => void;
   setProvider: (provider: AIProvider) => void;
   setModel: (model: string) => void;
+  setReasoningEffort: (effort: CodexReasoningEffort) => void;
   setSystemPrompt: (prompt: string) => void;
   saveCustomPrompt: (name: string, prompt: string) => void;
   deleteCustomPrompt: (name: string) => void;
@@ -29,6 +30,7 @@ interface ReviewState {
 const DEFAULT_CONFIG: AIReviewConfig = {
   provider: "claude",
   model: DEFAULT_MODELS.claude,
+  reasoningEffort: DEFAULT_REASONING_EFFORT,
   systemPrompt: DEFAULT_SYSTEM_PROMPTS.default ?? "",
   temperature: 0.7,
   maxTokens: 4096,
@@ -110,6 +112,11 @@ export const useReviewStore = create<ReviewState>()(
             ...state.modelByProvider,
             [state.config.provider]: model,
           },
+        })),
+
+      setReasoningEffort: (effort) =>
+        set((state) => ({
+          config: { ...state.config, reasoningEffort: effort },
         })),
 
       setSystemPrompt: (prompt) =>

@@ -1,5 +1,5 @@
-import type { AIProvider, AIReviewComment, AIReviewResult as AIReviewResultType } from "@/types";
-import { DEFAULT_SYSTEM_PROMPTS, MODELS_BY_PROVIDER } from "@/types";
+import type { AIProvider, AIReviewComment, AIReviewResult as AIReviewResultType, CodexReasoningEffort } from "@/types";
+import { CODEX_REASONING_EFFORTS, DEFAULT_SYSTEM_PROMPTS, MODELS_BY_PROVIDER } from "@/types";
 
 import {
   AlertCircle,
@@ -51,7 +51,7 @@ function AIReviewPanel({
   onCommentClick,
   onPostComment,
 }: AIReviewPanelProps) {
-  const { config, setProvider, setModel, setSystemPrompt, getReviewsForPR, getActiveReviewForProvider } =
+  const { config, setProvider, setModel, setReasoningEffort, setSystemPrompt, getReviewsForPR, getActiveReviewForProvider } =
     useReviewStore();
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [promptTemplate, setPromptTemplate] = useState<string>("default");
@@ -153,6 +153,32 @@ function AIReviewPanel({
               ))}
             </div>
           </div>
+
+          {config.provider === "codex" && (
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                Reasoning Effort
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {CODEX_REASONING_EFFORTS.map((effort) => (
+                  <button
+                    key={effort.id}
+                    type="button"
+                    onClick={() => setReasoningEffort(effort.id)}
+                    title={effort.description}
+                    className={cn(
+                      "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                      config.reasoningEffort === effort.id
+                        ? "bg-primary/20 text-primary ring-1 ring-primary/30"
+                        : "bg-glass-bg-subtle text-muted-foreground hover:bg-glass-highlight hover:text-foreground",
+                    )}
+                  >
+                    {effort.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">

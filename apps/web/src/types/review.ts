@@ -15,11 +15,25 @@ export const CLAUDE_MODELS: AIModelConfig[] = [
 ];
 
 // Codex CLI models
-// o3 and o4-mini are the main reasoning models, codex-mini-latest is optimized for CLI
 export const CODEX_MODELS: AIModelConfig[] = [
-  { id: "o4-mini", name: "o4-mini", description: "Fast, cost-efficient reasoning" },
-  { id: "o3", name: "o3", description: "Smartest, leading performance" },
-  { id: "codex-mini-latest", name: "Codex Mini", description: "Optimized for CLI, low-latency" },
+  { id: "gpt-5.2-codex", name: "GPT-5.2 Codex", description: "Most advanced agentic coding model" },
+  { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini", description: "Smaller, cost-effective" },
+];
+
+// Codex reasoning effort levels
+export type CodexReasoningEffort = "low" | "medium" | "high" | "xhigh";
+
+export interface ReasoningEffortConfig {
+  id: CodexReasoningEffort;
+  name: string;
+  description: string;
+}
+
+export const CODEX_REASONING_EFFORTS: ReasoningEffortConfig[] = [
+  { id: "medium", name: "Medium", description: "Balanced speed and quality (recommended)" },
+  { id: "high", name: "High", description: "Better answers, slower response" },
+  { id: "xhigh", name: "Extra High", description: "Best for complex reasoning, slowest" },
+  { id: "low", name: "Low", description: "Fastest, less thorough" },
 ];
 
 export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelConfig[]> = {
@@ -29,12 +43,15 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelConfig[]> = {
 
 export const DEFAULT_MODELS: Record<AIProvider, string> = {
   claude: "sonnet",
-  codex: "o4-mini",
+  codex: "gpt-5.2-codex",
 };
+
+export const DEFAULT_REASONING_EFFORT: CodexReasoningEffort = "high";
 
 export interface AIReviewConfig {
   provider: AIProvider;
   model?: string;
+  reasoningEffort?: CodexReasoningEffort;
   systemPrompt: string;
   temperature?: number;
   maxTokens?: number;

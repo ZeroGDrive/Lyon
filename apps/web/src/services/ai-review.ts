@@ -40,7 +40,12 @@ interface ProviderConfig {
   useStdin: boolean;
 }
 
-function getProviderConfig(provider: AIProvider, model: string | undefined, prompt: string): ProviderConfig {
+function getProviderConfig(
+  provider: AIProvider,
+  model: string | undefined,
+  reasoningEffort: string | undefined,
+  prompt: string,
+): ProviderConfig {
   switch (provider) {
     case "claude": {
       // Use json output format - simpler and more reliable than stream-json
@@ -58,6 +63,9 @@ function getProviderConfig(provider: AIProvider, model: string | undefined, prom
       if (model) {
         args.push("--model", model);
       }
+      if (reasoningEffort) {
+        args.push("-c", `model_reasoning_effort="${reasoningEffort}"`);
+      }
       args.push(prompt);
       return { args, useStdin: false };
     }
@@ -74,9 +82,9 @@ export async function startStreamingAIReview(
 
   const command = getProviderCommand(config.provider);
   const prompt = buildReviewPrompt(prInfo, config.systemPrompt);
-  const providerConfig = getProviderConfig(config.provider, config.model, prompt);
+  const providerConfig = getProviderConfig(config.provider, config.model, config.reasoningEffort, prompt);
 
-  console.log("[AI Review] Starting review with provider:", config.provider, "model:", config.model);
+  console.log("[AI Review] Starting review with provider:", config.provider, "model:", config.model, "reasoning:", config.reasoningEffort);
   console.log("[AI Review] Command:", command);
   console.log("[AI Review] PR:", prInfo.repository, "#", prInfo.number);
   console.log("[AI Review] Full prompt:\n", prompt);
