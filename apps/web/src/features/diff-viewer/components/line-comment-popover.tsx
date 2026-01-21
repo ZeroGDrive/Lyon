@@ -118,45 +118,43 @@ const LineCommentPopover = memo(function LineCommentPopover({
           )}
         </div>
 
-        {onAddComment && (
-          <form onSubmit={handleSubmit} className="border-t border-glass-border-subtle p-3">
-            <textarea
-              value={commentValue}
-              onChange={(e) => setCommentValue(e.target.value)}
-              placeholder="Add a comment..."
-              disabled={isSubmitting}
-              rows={2}
-              className={cn(
-                "w-full resize-none rounded-md border border-glass-border bg-background p-2",
-                "text-sm text-foreground placeholder:text-muted-foreground",
-                "focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50",
-                "disabled:cursor-not-allowed disabled:opacity-50",
-              )}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  handleSubmit(e);
-                }
-              }}
-            />
-            <div className="mt-2 flex items-center justify-between">
-              <span className="text-[10px] text-muted-foreground">
-                {typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent)
-                  ? "⌘"
-                  : "Ctrl"}{" "}
-                + Enter to submit
-              </span>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={!commentValue.trim() || isSubmitting}
-                className="h-7 px-2 text-xs"
-              >
-                <Send className="mr-1 size-3" />
-                Comment
-              </Button>
-            </div>
-          </form>
-        )}
+        <form onSubmit={handleSubmit} className="border-t border-glass-border-subtle p-3">
+          <textarea
+            value={commentValue}
+            onChange={(e) => setCommentValue(e.target.value)}
+            placeholder="Add a comment..."
+            disabled={isSubmitting || !onAddComment}
+            rows={2}
+            className={cn(
+              "w-full resize-none rounded-md border border-glass-border bg-background p-2",
+              "text-sm text-foreground placeholder:text-muted-foreground",
+              "focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+            )}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                handleSubmit(e);
+              }
+            }}
+          />
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground">
+              {typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent)
+                ? "⌘"
+                : "Ctrl"}{" "}
+              + Enter to submit
+            </span>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!commentValue.trim() || isSubmitting || !onAddComment}
+              className="h-7 px-2 text-xs"
+            >
+              <Send className="mr-1 size-3" />
+              Comment
+            </Button>
+          </div>
+        </form>
       </PopoverContent>
     </Popover>
   );
