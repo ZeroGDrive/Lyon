@@ -1,23 +1,25 @@
 export type AIProvider = "claude" | "codex";
 
-export type ClaudeModel = "claude-sonnet-4-20250514" | "claude-opus-4-20250514";
-export type CodexModel = "o3" | "o4-mini" | "codex-1";
-
 export interface AIModelConfig {
   id: string;
   name: string;
   description: string;
 }
 
+// Claude Code CLI models - use aliases for simplicity
+// Full names: claude-sonnet-4-5-20250929, claude-opus-4-5-20251101, claude-haiku-4-5-20251001
 export const CLAUDE_MODELS: AIModelConfig[] = [
-  { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", description: "Fast and efficient" },
-  { id: "claude-opus-4-20250514", name: "Claude Opus 4", description: "Most capable" },
+  { id: "sonnet", name: "Sonnet 4.5", description: "Best for complex agents and coding" },
+  { id: "opus", name: "Opus 4.5", description: "Most intelligent, maximum capability" },
+  { id: "haiku", name: "Haiku 4.5", description: "Fastest, near-frontier performance" },
 ];
 
+// Codex CLI models
+// o3 and o4-mini are the main reasoning models, codex-mini-latest is optimized for CLI
 export const CODEX_MODELS: AIModelConfig[] = [
-  { id: "o4-mini", name: "o4-mini", description: "Fast and efficient" },
-  { id: "o3", name: "o3", description: "Most capable" },
-  { id: "codex-1", name: "Codex 1", description: "Optimized for code" },
+  { id: "o4-mini", name: "o4-mini", description: "Fast, cost-efficient reasoning" },
+  { id: "o3", name: "o3", description: "Smartest, leading performance" },
+  { id: "codex-mini-latest", name: "Codex Mini", description: "Optimized for CLI, low-latency" },
 ];
 
 export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelConfig[]> = {
@@ -26,7 +28,7 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelConfig[]> = {
 };
 
 export const DEFAULT_MODELS: Record<AIProvider, string> = {
-  claude: "claude-sonnet-4-20250514",
+  claude: "sonnet",
   codex: "o4-mini",
 };
 
