@@ -132,10 +132,6 @@ function PRActivityTimeline({ pr, comments, className }: PRActivityTimelineProps
     );
   }, [pr, comments]);
 
-  if (events.length <= 1) {
-    return null; // Only the "created" event, no activity to show
-  }
-
   return (
     <GlassCard className={cn("p-4", className)} variant="subtle">
       <h3 className="mb-4 text-sm font-semibold text-foreground">Activity</h3>
