@@ -3,42 +3,25 @@ import type { PullRequest } from "@/types";
 import {
   CheckCircle,
   Clock,
+  Files,
   GitBranch,
   GitMerge,
   GitPullRequest,
   Loader2,
-  MessageSquare,
   XCircle,
 } from "lucide-react";
+import Markdown from "react-markdown";
 
-import { GlassCard, PageTitle } from "@/components/layout/main-content";
+import { GlassCard } from "@/components/layout/main-content";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface PRDetailProps {
   pr: PullRequest;
-  onMerge?: () => void;
-  onClose?: () => void;
-  onApprove?: () => void;
-  onRequestChanges?: () => void;
-  onStartReview?: () => void;
   isLoading?: boolean;
-  loadingAction?: "merge" | "close" | "approve" | "changes" | "review" | null;
 }
 
-function PRDetail({
-  pr,
-  onMerge,
-  onClose,
-  onApprove,
-  onRequestChanges,
-  onStartReview,
-  isLoading,
-  loadingAction,
-}: PRDetailProps) {
-  const canMerge = pr.mergeable && pr.state === "open" && !pr.draft;
-  const anyActionLoading = loadingAction !== null && loadingAction !== undefined;
-
+function PRDetail({ pr, isLoading }: PRDetailProps) {
   const reviewStatusIcon =
     pr.reviewDecision === "APPROVED" ? (
       <CheckCircle className="size-4 text-green-400" />
@@ -58,74 +41,7 @@ function PRDetail({
 
   return (
     <div className="space-y-6">
-      <PageTitle
-        description={`#${pr.number} by ${pr.author.login}`}
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onStartReview}
-              disabled={anyActionLoading || isLoading}
-            >
-              {loadingAction === "review" && <Loader2 className="mr-1.5 size-4 animate-spin" />}
-              AI Review
-            </Button>
-            {pr.state === "open" && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onApprove}
-                  disabled={anyActionLoading || isLoading}
-                >
-                  {loadingAction === "approve" && (
-                    <Loader2 className="mr-1.5 size-4 animate-spin" />
-                  )}
-                  Approve
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onRequestChanges}
-                  disabled={anyActionLoading || isLoading}
-                >
-                  {loadingAction === "changes" && (
-                    <Loader2 className="mr-1.5 size-4 animate-spin" />
-                  )}
-                  Request Changes
-                </Button>
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={onMerge}
-                  disabled={!canMerge || anyActionLoading || isLoading}
-                >
-                  {loadingAction === "merge" ? (
-                    <Loader2 className="mr-1.5 size-4 animate-spin" />
-                  ) : (
-                    <GitMerge className="mr-1.5 size-4" />
-                  )}
-                  Merge
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={onClose}
-                  disabled={anyActionLoading || isLoading}
-                >
-                  {loadingAction === "close" && <Loader2 className="mr-1.5 size-4 animate-spin" />}
-                  Close
-                </Button>
-              </>
-            )}
-          </div>
-        }
-      >
-        {pr.title}
-      </PageTitle>
-
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <GlassCard className="p-4" variant="subtle">
           <div className="flex items-center gap-3">
             <div
@@ -199,40 +115,31 @@ function PRDetail({
             </div>
           </div>
         </GlassCard>
-      </div>
 
-      {(pr.additions > 0 || pr.deletions > 0 || pr.changedFiles > 0) && (
-        <GlassCard className="p-4" variant="subtle">
-          <div className="flex items-center justify-between border-b border-glass-border-subtle pb-3">
-            <h3 className="text-sm font-semibold text-foreground">Changes</h3>
-            <div className="flex items-center gap-4 text-xs">
-              <span className="text-green-400">+{pr.additions}</span>
-              <span className="text-red-400">-{pr.deletions}</span>
-              {pr.changedFiles > 0 && (
-                <span className="text-muted-foreground">
-                  {pr.changedFiles} {pr.changedFiles === 1 ? "file" : "files"}
-                </span>
-              )}
+        {(pr.additions > 0 || pr.deletions > 0 || pr.changedFiles > 0) && (
+          <GlassCard className="p-4" variant="subtle">
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 items-center justify-center rounded-lg bg-blue-400/10">
+                <Files className="size-5 text-blue-400" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">Changes</p>
+                <p className="text-xs text-muted-foreground">
+                  <span className="text-green-400">+{pr.additions}</span>{" "}
+                  <span className="text-red-400">-{pr.deletions}</span>{" "}
+                  <span className="text-muted-foreground/70">({pr.changedFiles} files)</span>
+                </p>
+              </div>
             </div>
-          </div>
-
-          <div className="mt-3 flex items-center gap-6 text-xs text-muted-foreground">
-            {pr.reviews.length > 0 && (
-              <span className="flex items-center gap-1.5">
-                <MessageSquare className="size-3.5" />
-                {pr.reviews.length} reviews
-              </span>
-            )}
-            {pr.commits > 0 && <span>{pr.commits} commits</span>}
-          </div>
-        </GlassCard>
-      )}
+          </GlassCard>
+        )}
+      </div>
 
       {pr.body && (
         <GlassCard className="p-4" variant="subtle">
           <h3 className="mb-3 text-sm font-semibold text-foreground">Description</h3>
-          <div className="prose prose-sm prose-invert max-w-none text-muted-foreground">
-            {pr.body}
+          <div className="prose prose-sm prose-invert max-w-none prose-headings:text-foreground prose-p:text-muted-foreground prose-a:text-primary prose-strong:text-foreground prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-foreground prose-pre:bg-muted prose-li:text-muted-foreground">
+            <Markdown>{pr.body}</Markdown>
           </div>
         </GlassCard>
       )}
@@ -257,4 +164,74 @@ function PRDetail({
   );
 }
 
-export { PRDetail };
+interface PRActionsProps {
+  pr: PullRequest;
+  onMerge?: () => void;
+  onClose?: () => void;
+  onApprove?: () => void;
+  onRequestChanges?: () => void;
+  isLoading?: boolean;
+  loadingAction?: "merge" | "close" | "approve" | "changes" | null;
+}
+
+function PRActions({
+  pr,
+  onMerge,
+  onClose,
+  onApprove,
+  onRequestChanges,
+  isLoading,
+  loadingAction,
+}: PRActionsProps) {
+  const canMerge = pr.mergeable && pr.state === "open" && !pr.draft;
+  const anyActionLoading = loadingAction !== null && loadingAction !== undefined;
+
+  if (pr.state !== "open") return null;
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onApprove}
+        disabled={anyActionLoading || isLoading}
+      >
+        {loadingAction === "approve" && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+        Approve
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onRequestChanges}
+        disabled={anyActionLoading || isLoading}
+      >
+        {loadingAction === "changes" && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+        Request Changes
+      </Button>
+      <Button
+        variant="default"
+        size="sm"
+        onClick={onMerge}
+        disabled={!canMerge || anyActionLoading || isLoading}
+      >
+        {loadingAction === "merge" ? (
+          <Loader2 className="mr-1.5 size-4 animate-spin" />
+        ) : (
+          <GitMerge className="mr-1.5 size-4" />
+        )}
+        Merge
+      </Button>
+      <Button
+        variant="destructive"
+        size="sm"
+        onClick={onClose}
+        disabled={anyActionLoading || isLoading}
+      >
+        {loadingAction === "close" && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+        Close
+      </Button>
+    </div>
+  );
+}
+
+export { PRActions, PRDetail };

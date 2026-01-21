@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AIReviewPanel } from "@/features/ai-review";
 import { DiffViewer } from "@/features/diff-viewer";
-import { PRDetail, PRList } from "@/features/pull-requests";
+import { PRActions, PRDetail, PRList } from "@/features/pull-requests";
 import { parseDiff } from "@/lib/parse-diff";
 import {
   addReviewComment,
@@ -447,7 +447,22 @@ function HomeComponent() {
       <MainContent
         header={
           selectedPR ? (
-            <PageTitle description={`${selectedPR.repository.fullName} #${selectedPR.number}`}>
+            <PageTitle
+              description={`${selectedPR.repository.fullName} #${selectedPR.number}`}
+              actions={
+                <PRActions
+                  pr={selectedPR}
+                  onMerge={handleMerge}
+                  onClose={handleClose}
+                  onApprove={handleApprove}
+                  onRequestChanges={handleRequestChanges}
+                  isLoading={isLoadingPRDetails}
+                  loadingAction={
+                    actionLoading === "review" ? null : actionLoading as "merge" | "close" | "approve" | "changes" | null
+                  }
+                />
+              }
+            >
               {selectedPR.title}
             </PageTitle>
           ) : (
@@ -459,17 +474,7 @@ function HomeComponent() {
           {selectedPR ? (
             <div className="grid gap-6 lg:grid-cols-3">
               <div className="space-y-6 lg:col-span-2">
-                <PRDetail
-                  pr={selectedPR}
-                  onMerge={handleMerge}
-                  onClose={handleClose}
-                  onApprove={handleApprove}
-                  onRequestChanges={handleRequestChanges}
-                  isLoading={isLoadingPRDetails}
-                  loadingAction={
-                    actionLoading as "merge" | "close" | "approve" | "changes" | "review" | null
-                  }
-                />
+                <PRDetail pr={selectedPR} />
 
                 <DiffViewer
                   files={diffFiles}
