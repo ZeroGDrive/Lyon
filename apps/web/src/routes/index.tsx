@@ -1,4 +1,4 @@
-import type { AIProvider, CommentsByLine, FileDiff, PullRequest, Repository } from "@/types";
+import type { AIProvider, Comment, CommentsByLine, FileDiff, PullRequest, Repository } from "@/types";
 
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AIReviewPanel } from "@/features/ai-review";
 import { DiffViewer } from "@/features/diff-viewer";
-import { PRActions, PRDetail, PRList } from "@/features/pull-requests";
+import { PRActions, PRActivityTimeline, PRDetail, PRList } from "@/features/pull-requests";
 import { parseDiff } from "@/lib/parse-diff";
 import {
   addReviewComment,
@@ -35,6 +35,7 @@ import {
   convertToCommentsByLine,
   fetchPRsForRepos,
   getPullRequest,
+  getPullRequestComments,
   getPullRequestDiff,
   getReviewComments,
   getUserRepositories,
@@ -61,6 +62,7 @@ function HomeComponent() {
   const [selectedPR, setSelectedPR] = useState<PullRequest | null>(null);
   const [diffFiles, setDiffFiles] = useState<FileDiff[]>([]);
   const [commentsByLine, setCommentsByLine] = useState<CommentsByLine>(new Map());
+  const [prComments, setPrComments] = useState<Comment[]>([]);
   const [selectedDiffFile, setSelectedDiffFile] = useState<string | null>(null);
   const [scrollToLine, setScrollToLine] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -158,10 +160,11 @@ function HomeComponent() {
     setDiffError(null);
 
     try {
-      const [detailsResult, diffResult, commentsResult] = await Promise.all([
+      const [detailsResult, diffResult, reviewCommentsResult, prCommentsResult] = await Promise.all([
         getPullRequest(pr.repository.fullName, pr.number),
         getPullRequestDiff(pr.repository.fullName, pr.number),
         getReviewComments(pr.repository.fullName, pr.number),
+        getPullRequestComments(pr.repository.fullName, pr.number),
       ]);
 
       if (detailsResult.success && detailsResult.data) {
@@ -194,10 +197,16 @@ function HomeComponent() {
         setDiffError(diffResult.error ?? "Failed to fetch diff");
       }
 
-      if (commentsResult.success && commentsResult.data) {
-        setCommentsByLine(convertToCommentsByLine(commentsResult.data));
+      if (reviewCommentsResult.success && reviewCommentsResult.data) {
+        setCommentsByLine(convertToCommentsByLine(reviewCommentsResult.data));
       } else {
         setCommentsByLine(new Map());
+      }
+
+      if (prCommentsResult.success && prCommentsResult.data) {
+        setPrComments(prCommentsResult.data);
+      } else {
+        setPrComments([]);
       }
     } catch (err) {
       console.error("Failed to fetch PR details:", err);
@@ -475,6 +484,8 @@ function HomeComponent() {
             <div className="grid gap-6 lg:grid-cols-3">
               <div className="space-y-6 lg:col-span-2">
                 <PRDetail pr={selectedPR} />
+
+                <PRActivityTimeline pr={selectedPR} comments={prComments} />
 
                 <DiffViewer
                   files={diffFiles}
