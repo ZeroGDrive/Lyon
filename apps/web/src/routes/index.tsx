@@ -313,13 +313,13 @@ function HomeComponent() {
     setActionLoading(null);
   }, [selectedPR, fetchPRDetails]);
 
-  const handleRequestChanges = useCallback(async () => {
+  const handleRequestChanges = useCallback(async (comment: string) => {
     if (!selectedPR) return;
     setActionLoading("changes");
     await requestChanges(
       selectedPR.repository.fullName,
       selectedPR.number,
-      "Changes requested via Lyon",
+      comment,
     );
     fetchPRDetails(selectedPR);
     setActionLoading(null);

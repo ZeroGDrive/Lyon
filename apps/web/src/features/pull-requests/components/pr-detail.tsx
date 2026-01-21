@@ -1,6 +1,8 @@
 import type { PullRequest } from "@/types";
 
 import {
+  AlertTriangle,
+  Check,
   CheckCircle,
   Clock,
   Files,
@@ -8,12 +10,36 @@ import {
   GitMerge,
   GitPullRequest,
   Loader2,
+  MessageSquareWarning,
+  X,
   XCircle,
 } from "lucide-react";
 import Markdown from "react-markdown";
+import { useState } from "react";
 
 import { GlassCard } from "@/components/layout/main-content";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 interface PRDetailProps {
@@ -169,7 +195,7 @@ interface PRActionsProps {
   onMerge?: () => void;
   onClose?: () => void;
   onApprove?: () => void;
-  onRequestChanges?: () => void;
+  onRequestChanges?: (comment: string) => void;
   isLoading?: boolean;
   loadingAction?: "merge" | "close" | "approve" | "changes" | null;
 }
@@ -183,36 +209,104 @@ function PRActions({
   isLoading,
   loadingAction,
 }: PRActionsProps) {
+  const [requestChangesOpen, setRequestChangesOpen] = useState(false);
+  const [requestChangesComment, setRequestChangesComment] = useState("");
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+
   const canMerge = pr.mergeable && pr.state === "open" && !pr.draft;
   const anyActionLoading = loadingAction !== null && loadingAction !== undefined;
+
+  const handleRequestChanges = () => {
+    if (requestChangesComment.trim() && onRequestChanges) {
+      onRequestChanges(requestChangesComment.trim());
+      setRequestChangesComment("");
+      setRequestChangesOpen(false);
+    }
+  };
+
+  const handleClose = () => {
+    onClose?.();
+    setCloseDialogOpen(false);
+  };
 
   if (pr.state !== "open") return null;
 
   return (
     <div className="flex flex-wrap gap-2">
+      {/* Approve Button */}
       <Button
         variant="outline"
         size="sm"
         onClick={onApprove}
         disabled={anyActionLoading || isLoading}
+        className="border-green-500/30 text-green-500 hover:bg-green-500/10 hover:text-green-400"
       >
-        {loadingAction === "approve" && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+        {loadingAction === "approve" ? (
+          <Loader2 className="mr-1.5 size-4 animate-spin" />
+        ) : (
+          <Check className="mr-1.5 size-4" />
+        )}
         Approve
       </Button>
+
+      {/* Request Changes Dialog */}
+      <Dialog open={requestChangesOpen} onOpenChange={setRequestChangesOpen}>
+        <DialogTrigger
+          render={
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={anyActionLoading || isLoading}
+              className="border-yellow-500/30 text-yellow-500 hover:bg-yellow-500/10 hover:text-yellow-400"
+            />
+          }
+        >
+          {loadingAction === "changes" ? (
+            <Loader2 className="mr-1.5 size-4 animate-spin" />
+          ) : (
+            <MessageSquareWarning className="mr-1.5 size-4" />
+          )}
+          Request Changes
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Request Changes</DialogTitle>
+            <DialogDescription>
+              Explain what changes are needed before this PR can be approved.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            placeholder="Describe the changes you'd like to see..."
+            value={requestChangesComment}
+            onChange={(e) => setRequestChangesComment(e.target.value)}
+            rows={4}
+            className="resize-none"
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRequestChangesOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRequestChanges}
+              disabled={!requestChangesComment.trim()}
+              className="bg-yellow-600 text-white hover:bg-yellow-700"
+            >
+              <MessageSquareWarning className="mr-1.5 size-4" />
+              Request Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Merge Button */}
       <Button
-        variant="outline"
-        size="sm"
-        onClick={onRequestChanges}
-        disabled={anyActionLoading || isLoading}
-      >
-        {loadingAction === "changes" && <Loader2 className="mr-1.5 size-4 animate-spin" />}
-        Request Changes
-      </Button>
-      <Button
-        variant="default"
         size="sm"
         onClick={onMerge}
         disabled={!canMerge || anyActionLoading || isLoading}
+        className="bg-primary text-primary-foreground hover:bg-primary/90"
       >
         {loadingAction === "merge" ? (
           <Loader2 className="mr-1.5 size-4 animate-spin" />
@@ -221,15 +315,49 @@ function PRActions({
         )}
         Merge
       </Button>
-      <Button
-        variant="destructive"
-        size="sm"
-        onClick={onClose}
-        disabled={anyActionLoading || isLoading}
-      >
-        {loadingAction === "close" && <Loader2 className="mr-1.5 size-4 animate-spin" />}
-        Close
-      </Button>
+
+      {/* Close Alert Dialog */}
+      <AlertDialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen}>
+        <AlertDialogTrigger
+          render={
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={anyActionLoading || isLoading}
+              className="border-red-500/30 text-red-500 hover:bg-red-500/10 hover:text-red-400"
+            />
+          }
+        >
+          {loadingAction === "close" ? (
+            <Loader2 className="mr-1.5 size-4 animate-spin" />
+          ) : (
+            <X className="mr-1.5 size-4" />
+          )}
+          Close
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="size-5 text-destructive" />
+              Close Pull Request?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to close this pull request? This will mark
+              it as closed without merging. You can reopen it later if needed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleClose}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              <X className="mr-1.5 size-4" />
+              Close PR
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
