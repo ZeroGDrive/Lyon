@@ -484,12 +484,14 @@ export async function addReviewComment(
     `body=${body}`,
     "-f",
     `path=${path}`,
-    "-f",
+    "-F",
     `line=${line}`,
     "-f",
     `commit_id=${commitId}`,
     "-f",
     `side=${side}`,
+    "-f",
+    "subject_type=line",
   ]);
 }
 

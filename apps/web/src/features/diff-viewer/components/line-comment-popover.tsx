@@ -31,13 +31,24 @@ const LineCommentPopover = memo(function LineCommentPopover({
 
   const hasComments = comments.length > 0;
 
+  // Debug: log when popover opens
+  if (isOpen) {
+    console.log("LineCommentPopover open", { lineNumber, side, hasCallback: !!onAddComment });
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!commentValue.trim() || !onAddComment) return;
+    console.log("LineCommentPopover handleSubmit called", { commentValue, hasCallback: !!onAddComment });
+    if (!commentValue.trim() || !onAddComment) {
+      console.log("Early return - no comment or no callback");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
+      console.log("Calling onAddComment with:", commentValue.trim());
       await Promise.resolve(onAddComment(commentValue.trim()));
+      console.log("onAddComment completed");
       setCommentValue("");
     } catch (err) {
       console.error("Failed to submit comment:", err);
