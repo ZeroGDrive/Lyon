@@ -436,11 +436,21 @@ export async function getPullRequestDiff(
   return runGhCommandRaw(["pr", "diff", String(prNumber), "--repo", repo]);
 }
 
+interface GhPRCommentsResult {
+  comments: Array<{
+    id: string;
+    author: { login: string };
+    body: string;
+    createdAt: string;
+    url: string;
+  }>;
+}
+
 export async function getPullRequestComments(
   repo: string,
   prNumber: number,
 ): Promise<CommandResult<Comment[]>> {
-  return runGhCommand<Comment[]>([
+  const result = await runGhCommand<GhPRCommentsResult>([
     "pr",
     "view",
     String(prNumber),
@@ -449,6 +459,24 @@ export async function getPullRequestComments(
     "--json",
     "comments",
   ]);
+
+  if (result.success && result.data) {
+    const comments: Comment[] = (result.data.comments ?? []).map((c) => ({
+      id: c.id,
+      author: {
+        login: c.author.login,
+        avatarUrl: `https://github.com/${c.author.login}.png`,
+        url: `https://github.com/${c.author.login}`,
+      },
+      body: c.body,
+      createdAt: c.createdAt,
+      updatedAt: c.createdAt,
+      url: c.url,
+    }));
+    return { success: true, data: comments };
+  }
+
+  return { success: false, error: result.error };
 }
 
 export async function getPullRequestReviewComments(
