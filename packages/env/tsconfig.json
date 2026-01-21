@@ -1,0 +1,3 @@
+{
+  "extends": "@lyon/config/tsconfig.base.json"
+}
