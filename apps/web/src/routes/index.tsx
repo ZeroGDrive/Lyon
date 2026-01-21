@@ -433,6 +433,10 @@ function HomeComponent() {
                     setScrollToLine(null); // Clear scroll position when manually selecting file
                   }}
                   scrollToLine={scrollToLine}
+                  onAddComment={(filePath, lineNumber, side, body) => {
+                    console.log("Add comment:", { filePath, lineNumber, side, body });
+                    // TODO: Implement comment persistence
+                  }}
                 />
               </div>
 
