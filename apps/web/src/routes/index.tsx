@@ -8,7 +8,6 @@ import {
   Loader2,
   Plus,
   RefreshCw,
-  Settings,
   Trash2,
   User,
   X,
@@ -23,31 +22,40 @@ import {
   MainContent,
   PageTitle,
 } from "@/components/layout/main-content";
+import { OnboardingDialog } from "@/components/onboarding-dialog";
 import { Sidebar, SidebarItem, SidebarSection } from "@/components/layout/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AIReviewPanel } from "@/features/ai-review";
 import { DiffViewer } from "@/features/diff-viewer";
-import { PRActions, PRActivityTimeline, PRDetail, PRList } from "@/features/pull-requests";
+import { PendingReviewBanner, PRActions, PRActivityTimeline, PRDetail, PRList } from "@/features/pull-requests";
 import { parseDiff } from "@/lib/parse-diff";
 import {
   addReviewComment,
   approvePullRequest,
+  checkGhCliStatus,
   closePullRequest,
+  convertReviewCommentsToComments,
   convertToCommentsByLine,
+  deletePendingReview,
   fetchPRsForRepos,
+  getAuthenticatedUser,
   getOrganizationRepositories,
+  getPendingReview,
   getPullRequest,
-  getPullRequestComments,
   getPullRequestDiff,
   getReviewComments,
+  getPendingReviewComments,
   getUserOrganizations,
   getUserRepositories,
   mergePullRequest,
+  type PendingReview,
   requestChanges,
+  submitPendingReview,
 } from "@/services/github";
 import {
+  checkProviderStatus,
   createPendingReview,
   parseAIReviewResponse,
   startStreamingAIReview,
@@ -67,7 +75,7 @@ function HomeComponent() {
   const [selectedPR, setSelectedPR] = useState<PullRequest | null>(null);
   const [diffFiles, setDiffFiles] = useState<FileDiff[]>([]);
   const [commentsByLine, setCommentsByLine] = useState<CommentsByLine>(new Map());
-  const [prComments, setPrComments] = useState<Comment[]>([]);
+  const [reviewComments, setReviewComments] = useState<Comment[]>([]);
   const [selectedDiffFile, setSelectedDiffFile] = useState<string | null>(null);
   const [scrollToLine, setScrollToLine] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -76,8 +84,18 @@ function HomeComponent() {
   const [isLoadingDiff, setIsLoadingDiff] = useState(false);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isReviewing, setIsReviewing] = useState(false);
-  const [abortReview, setAbortReview] = useState<(() => Promise<void>) | null>(null);
+  const [runningByProvider, setRunningByProvider] = useState<Record<AIProvider, boolean>>({
+    claude: false,
+    codex: false,
+  });
+  const [abortReviewByProvider, setAbortReviewByProvider] = useState<Record<AIProvider, (() => Promise<void>) | null>>({
+    claude: null,
+    codex: null,
+  });
+  const [runningReviewIdByProvider, setRunningReviewIdByProvider] = useState<Record<AIProvider, string | null>>({
+    claude: null,
+    codex: null,
+  });
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showAddRepo, setShowAddRepo] = useState(false);
   const [repoInput, setRepoInput] = useState("");
@@ -87,8 +105,34 @@ function HomeComponent() {
   const [orgRepos, setOrgRepos] = useState<Repository[]>([]);
   const [isLoadingOrgs, setIsLoadingOrgs] = useState(false);
   const [isLoadingOrgRepos, setIsLoadingOrgRepos] = useState(false);
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [ghReady, setGhReady] = useState(false);
+  const [pendingReview, setPendingReview] = useState<PendingReview | null>(null);
 
   const { config, addReview, updateReview } = useReviewStore();
+
+  // Check gh CLI status and current user on mount
+  useEffect(() => {
+    const checkSetup = async () => {
+      const status = await checkGhCliStatus();
+      if (status.installed && status.authenticated) {
+        setGhReady(true);
+        if (status.username) {
+          setCurrentUser(status.username);
+        } else {
+          // Fallback to getAuthenticatedUser
+          const userResult = await getAuthenticatedUser();
+          if (userResult.success && userResult.data) {
+            setCurrentUser(userResult.data.login);
+          }
+        }
+      } else {
+        setShowOnboarding(true);
+      }
+    };
+    checkSetup();
+  }, []);
 
   const fetchPRs = useCallback(async () => {
     if (watchedRepos.length === 0) {
@@ -159,6 +203,43 @@ function HomeComponent() {
     setIsLoadingOrgRepos(false);
   }, []);
 
+  const refreshReviewComments = useCallback(
+    async (pr: PullRequest, pendingReviewNodeId?: string | null) => {
+      const commentsResult = await getReviewComments(pr.repository.fullName, pr.number);
+      let mergedComments = commentsResult.success && commentsResult.data ? commentsResult.data : [];
+
+      if (pendingReviewNodeId) {
+        const pendingCommentsResult = await getPendingReviewComments(
+          pr.repository.fullName,
+          pr.number,
+          pendingReviewNodeId,
+        );
+        if (pendingCommentsResult.success && pendingCommentsResult.data) {
+          const mergedMap = new Map<string, (typeof mergedComments)[number]>();
+          const makeKey = (comment: (typeof mergedComments)[number]) =>
+            `${comment.path}:${comment.line ?? comment.original_line ?? ""}:${comment.body}:${comment.user.login}:${comment.created_at}`;
+
+          for (const comment of mergedComments) {
+            mergedMap.set(makeKey(comment), comment);
+          }
+          for (const comment of pendingCommentsResult.data) {
+            mergedMap.set(makeKey(comment), comment);
+          }
+          mergedComments = Array.from(mergedMap.values());
+        }
+      }
+
+      if (mergedComments.length > 0) {
+        setCommentsByLine(convertToCommentsByLine(mergedComments));
+        setReviewComments(convertReviewCommentsToComments(mergedComments));
+      } else {
+        setCommentsByLine(new Map());
+        setReviewComments([]);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     if (showAddRepo && userRepos.length === 0) {
       fetchUserRepos();
@@ -196,13 +277,13 @@ function HomeComponent() {
     setIsLoadingPRDetails(true);
     setIsLoadingDiff(true);
     setDiffError(null);
+    setPendingReview(null);
 
     try {
-      const [detailsResult, diffResult, reviewCommentsResult, prCommentsResult] = await Promise.all([
+      const [detailsResult, diffResult, pendingReviewResult] = await Promise.all([
         getPullRequest(pr.repository.fullName, pr.number),
         getPullRequestDiff(pr.repository.fullName, pr.number),
-        getReviewComments(pr.repository.fullName, pr.number),
-        getPullRequestComments(pr.repository.fullName, pr.number),
+        getPendingReview(pr.repository.fullName, pr.number),
       ]);
 
       if (detailsResult.success && detailsResult.data) {
@@ -235,17 +316,11 @@ function HomeComponent() {
         setDiffError(diffResult.error ?? "Failed to fetch diff");
       }
 
-      if (reviewCommentsResult.success && reviewCommentsResult.data) {
-        setCommentsByLine(convertToCommentsByLine(reviewCommentsResult.data));
-      } else {
-        setCommentsByLine(new Map());
+      if (pendingReviewResult.success && pendingReviewResult.data) {
+        setPendingReview(pendingReviewResult.data);
       }
 
-      if (prCommentsResult.success && prCommentsResult.data) {
-        setPrComments(prCommentsResult.data);
-      } else {
-        setPrComments([]);
-      }
+      await refreshReviewComments(pr, pendingReviewResult.data?.nodeId ?? null);
     } catch (err) {
       console.error("Failed to fetch PR details:", err);
       setDiffFiles([]);
@@ -270,7 +345,41 @@ function HomeComponent() {
     async (provider: AIProvider, model: string, systemPrompt: string) => {
       if (!selectedPR) return;
 
-      setIsReviewing(true);
+      if (runningByProvider[provider]) {
+        toast.error("Review already running", {
+          description: `A ${provider} review is already in progress.`,
+        });
+        return;
+      }
+
+      // Check if provider is available
+      const providerStatus = await checkProviderStatus(provider);
+      if (!providerStatus.installed) {
+        const providerName = provider === "claude" ? "Claude Code" : "Codex";
+        toast.error(`${providerName} CLI not installed`, {
+          description: `Please install the ${provider} CLI to use this provider.`,
+          action: {
+            label: "Learn more",
+            onClick: () => {
+              const url = provider === "claude"
+                ? "https://docs.anthropic.com/en/docs/claude-code"
+                : "https://github.com/openai/codex";
+              window.open(url, "_blank");
+            },
+          },
+        });
+        return;
+      }
+
+      if (!providerStatus.authenticated) {
+        const providerName = provider === "claude" ? "Claude Code" : "Codex";
+        toast.error(`${providerName} not authenticated`, {
+          description: providerStatus.error ?? `Please authenticate the ${provider} CLI.`,
+        });
+        return;
+      }
+
+      setRunningByProvider((prev) => ({ ...prev, [provider]: true }));
 
       const pendingReview = createPendingReview(
         selectedPR.number,
@@ -279,6 +388,7 @@ function HomeComponent() {
       );
       addReview(pendingReview);
       updateReview(pendingReview.id, { status: "running" });
+      setRunningReviewIdByProvider((prev) => ({ ...prev, [provider]: pendingReview.id }));
 
       const abort = await startStreamingAIReview(
         { number: selectedPR.number, repository: selectedPR.repository.fullName },
@@ -299,32 +409,43 @@ function HomeComponent() {
               ...parsedReview,
               status: "completed",
             });
-            setIsReviewing(false);
-            setAbortReview(null);
+            setRunningByProvider((prev) => ({ ...prev, [provider]: false }));
+            setAbortReviewByProvider((prev) => ({ ...prev, [provider]: null }));
+            setRunningReviewIdByProvider((prev) => ({ ...prev, [provider]: null }));
           },
           onError: (error: string) => {
             updateReview(pendingReview.id, {
               status: "failed",
               error,
             });
-            setIsReviewing(false);
-            setAbortReview(null);
+            setRunningByProvider((prev) => ({ ...prev, [provider]: false }));
+            setAbortReviewByProvider((prev) => ({ ...prev, [provider]: null }));
+            setRunningReviewIdByProvider((prev) => ({ ...prev, [provider]: null }));
           },
         },
       );
 
-      setAbortReview(() => abort);
+      setAbortReviewByProvider((prev) => ({ ...prev, [provider]: abort }));
     },
-    [selectedPR, addReview, updateReview],
+    [selectedPR, runningByProvider, addReview, updateReview],
   );
 
-  const handleCancelReview = useCallback(() => {
-    if (abortReview) {
-      abortReview();
-      setIsReviewing(false);
-      setAbortReview(null);
+  const handleCancelReview = useCallback((provider: AIProvider) => {
+    const abort = abortReviewByProvider[provider];
+    const reviewId = runningReviewIdByProvider[provider];
+    if (abort) {
+      abort();
     }
-  }, [abortReview]);
+    if (reviewId) {
+      updateReview(reviewId, {
+        status: "failed",
+        error: "Review cancelled",
+      });
+    }
+    setRunningByProvider((prev) => ({ ...prev, [provider]: false }));
+    setAbortReviewByProvider((prev) => ({ ...prev, [provider]: null }));
+    setRunningReviewIdByProvider((prev) => ({ ...prev, [provider]: null }));
+  }, [abortReviewByProvider, runningReviewIdByProvider, updateReview]);
 
   const handleMerge = useCallback(async () => {
     if (!selectedPR) return;
@@ -388,6 +509,42 @@ function HomeComponent() {
     setActionLoading(null);
   }, [selectedPR, fetchPRDetails]);
 
+  const handleSubmitPendingReview = useCallback(async (event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT" = "COMMENT") => {
+    if (!selectedPR || !pendingReview) return;
+    setActionLoading("submit-review");
+    const result = await submitPendingReview(
+      selectedPR.repository.fullName,
+      selectedPR.number,
+      pendingReview.id,
+      event,
+    );
+    if (result.success) {
+      toast.success("Review submitted");
+      setPendingReview(null);
+      await fetchPRDetails(selectedPR);
+    } else {
+      toast.error("Failed to submit review", { description: result.error });
+    }
+    setActionLoading(null);
+  }, [selectedPR, pendingReview, fetchPRDetails]);
+
+  const handleDiscardPendingReview = useCallback(async () => {
+    if (!selectedPR || !pendingReview) return;
+    setActionLoading("discard-review");
+    const result = await deletePendingReview(
+      selectedPR.repository.fullName,
+      selectedPR.number,
+      pendingReview.id,
+    );
+    if (result.success) {
+      toast.success("Review discarded");
+      setPendingReview(null);
+    } else {
+      toast.error("Failed to discard review", { description: result.error });
+    }
+    setActionLoading(null);
+  }, [selectedPR, pendingReview]);
+
   const handleAddComment = useCallback(
     async (filePath: string, lineNumber: number, side: "LEFT" | "RIGHT", body: string) => {
       if (!selectedPR) {
@@ -408,27 +565,36 @@ function HomeComponent() {
         lineNumber,
         selectedPR.headSha,
         side,
+        pendingReview?.nodeId,
       );
 
       if (result.success) {
-        // Refresh comments after adding
-        const commentsResult = await getReviewComments(
-          selectedPR.repository.fullName,
-          selectedPR.number,
-        );
-        if (commentsResult.success && commentsResult.data) {
-          setCommentsByLine(convertToCommentsByLine(commentsResult.data));
+        toast.success("Comment added");
+        if (pendingReview?.nodeId) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
         }
+        await refreshReviewComments(selectedPR, pendingReview?.nodeId);
       } else {
-        console.error("Failed to add comment:", result.error);
+        let errorDesc = result.error ?? "Unknown error occurred";
+        if (result.error?.includes("pending review")) {
+          errorDesc = "You have a pending review. Refresh to sync it, or submit/discard it to post single comments.";
+          // Refresh to show the pending review banner
+          await fetchPRDetails(selectedPR);
+        } else if (result.error?.includes("pull_request_review_thread.line") || result.error?.includes("Validation Failed")) {
+          errorDesc = "Cannot comment on this line. The line may not be part of the diff.";
+        }
+        toast.error("Failed to add comment", { description: errorDesc });
       }
     },
-    [selectedPR],
+    [selectedPR, pendingReview, refreshReviewComments, fetchPRDetails],
   );
 
   const handlePostAIComment = useCallback(
     async (comment: AIReviewComment): Promise<boolean> => {
       if (!selectedPR || !selectedPR.headSha) {
+        toast.error("Cannot post comment", {
+          description: "No PR selected or missing commit information.",
+        });
         return false;
       }
 
@@ -447,22 +613,29 @@ function HomeComponent() {
         comment.line,
         selectedPR.headSha,
         comment.side,
+        pendingReview?.nodeId,
       );
 
       if (result.success) {
-        // Refresh comments after adding
-        const commentsResult = await getReviewComments(
-          selectedPR.repository.fullName,
-          selectedPR.number,
-        );
-        if (commentsResult.success && commentsResult.data) {
-          setCommentsByLine(convertToCommentsByLine(commentsResult.data));
-        }
+        toast.success("Comment posted to GitHub");
+        // Small delay to allow GitHub to process the comment
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        await refreshReviewComments(selectedPR, pendingReview?.nodeId);
         return true;
       }
+
+      let errorDesc = result.error ?? "Unknown error occurred";
+      if (result.error?.includes("pending review")) {
+        errorDesc = "You have a pending review. Refresh to sync it, or submit/discard it to post single comments.";
+        // Refresh to show the pending review banner
+        await fetchPRDetails(selectedPR);
+      } else if (result.error?.includes("pull_request_review_thread.line") || result.error?.includes("Validation Failed")) {
+        errorDesc = "Cannot comment on this line. The line may not be part of the diff.";
+      }
+      toast.error("Failed to post comment", { description: errorDesc });
       return false;
     },
-    [selectedPR],
+    [selectedPR, pendingReview, refreshReviewComments, fetchPRDetails],
   );
 
   const totalPRs = Array.from(pullRequests.values()).reduce((sum, prs) => sum + prs.length, 0);
@@ -482,14 +655,9 @@ function HomeComponent() {
   const sidebarContent = (
     <Sidebar
       header={
-        <div className="flex w-full items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FolderGit2 className="size-5 text-primary" />
-            <span className="text-lg font-bold">Lyon</span>
-          </div>
-          <Button variant="ghost" size="icon-sm">
-            <Settings className="size-4" />
-          </Button>
+        <div className="flex w-full items-center gap-3">
+          <img src="/favicon.svg" alt="Lyon" className="size-8 rounded-lg" />
+          <span className="text-lg font-bold">Lyon</span>
         </div>
       }
       footer={
@@ -558,17 +726,33 @@ function HomeComponent() {
             <PageTitle
               description={`${selectedPR.repository.fullName} #${selectedPR.number}`}
               actions={
-                <PRActions
-                  pr={selectedPR}
-                  onMerge={handleMerge}
-                  onClose={handleClose}
-                  onApprove={handleApprove}
-                  onRequestChanges={handleRequestChanges}
-                  isLoading={isLoadingPRDetails}
-                  loadingAction={
-                    actionLoading === "review" ? null : actionLoading as "merge" | "close" | "approve" | "changes" | null
-                  }
-                />
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fetchPRDetails(selectedPR)}
+                    disabled={isLoadingPRDetails}
+                  >
+                    {isLoadingPRDetails ? (
+                      <Loader2 className="mr-1.5 size-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-1.5 size-4" />
+                    )}
+                    Refresh
+                  </Button>
+                  <PRActions
+                    pr={selectedPR}
+                    currentUser={currentUser}
+                    onMerge={handleMerge}
+                    onClose={handleClose}
+                    onApprove={handleApprove}
+                    onRequestChanges={handleRequestChanges}
+                    isLoading={isLoadingPRDetails}
+                    loadingAction={
+                      actionLoading === "review" ? null : actionLoading as "merge" | "close" | "approve" | "changes" | null
+                    }
+                  />
+                </>
               }
             >
               {selectedPR.title}
@@ -582,9 +766,26 @@ function HomeComponent() {
           {selectedPR ? (
             <div className="grid gap-6 lg:grid-cols-3">
               <div className="space-y-6 lg:col-span-2">
+                {pendingReview && (
+                  <PendingReviewBanner
+                    onSubmit={handleSubmitPendingReview}
+                    onDiscard={handleDiscardPendingReview}
+                    isLoading={isLoadingPRDetails}
+                    loadingAction={actionLoading}
+                    isOwnPR={Boolean(currentUser && selectedPR.author.login === currentUser)}
+                  />
+                )}
+
                 <PRDetail pr={selectedPR} />
 
-                <PRActivityTimeline pr={selectedPR} comments={prComments} />
+                <PRActivityTimeline
+                  pr={selectedPR}
+                  comments={reviewComments}
+                  onCommentClick={(path, line) => {
+                    setSelectedDiffFile(path);
+                    setScrollToLine(line);
+                  }}
+                />
 
                 <DiffViewer
                   files={diffFiles}
@@ -596,6 +797,7 @@ function HomeComponent() {
                     setSelectedDiffFile(file);
                     setScrollToLine(null); // Clear scroll position when manually selecting file
                   }}
+                  scrollToFile={selectedDiffFile}
                   scrollToLine={scrollToLine}
                   commentsByLine={commentsByLine}
                   onAddComment={handleAddComment}
@@ -607,8 +809,8 @@ function HomeComponent() {
                   prNumber={selectedPR.number}
                   repository={selectedPR.repository.fullName}
                   onStartReview={handleStartReview}
-                  onCancelReview={handleCancelReview}
-                  isLoading={isReviewing}
+                  onCancelReview={() => handleCancelReview(config.provider)}
+                  isLoading={runningByProvider[config.provider]}
                   onCommentClick={(filePath, line) => {
                     setSelectedDiffFile(filePath);
                     setScrollToLine(line);
@@ -926,6 +1128,20 @@ function HomeComponent() {
           </GlassCard>
         </div>
       )}
+
+      <OnboardingDialog
+        open={showOnboarding}
+        onOpenChange={setShowOnboarding}
+        onComplete={() => {
+          setGhReady(true);
+          // Fetch user and repos after onboarding
+          getAuthenticatedUser().then((result) => {
+            if (result.success && result.data) {
+              setCurrentUser(result.data.login);
+            }
+          });
+        }}
+      />
     </AppLayout>
   );
 }

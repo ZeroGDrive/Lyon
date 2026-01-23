@@ -2,14 +2,20 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 use tauri::{async_runtime::spawn_blocking, AppHandle, Emitter, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::{Child, Command as TokioCommand};
+use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex;
 
-type ProcessMap = Arc<Mutex<HashMap<String, Child>>>;
+// Store process handle along with abort handles for cleanup
+struct ProcessHandle {
+    abort_handles: Vec<tokio::task::AbortHandle>,
+    cancel_tx: Option<tokio::sync::oneshot::Sender<()>>,
+}
+
+type ProcessMap = Arc<Mutex<HashMap<String, ProcessHandle>>>;
 
 pub struct AIProcessState {
     processes: ProcessMap,
@@ -37,89 +43,6 @@ struct AIContentEvent {
     text: String,
 }
 
-#[derive(Deserialize)]
-struct ClaudeStreamEvent {
-    #[serde(rename = "type")]
-    event_type: Option<String>,
-    delta: Option<ClaudeDelta>,
-    content_block: Option<ClaudeContentBlock>,
-}
-
-#[derive(Deserialize)]
-struct ClaudeDelta {
-    #[serde(rename = "type")]
-    delta_type: Option<String>,
-    text: Option<String>,
-    thinking: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct ClaudeContentBlock {
-    #[serde(rename = "type")]
-    block_type: Option<String>,
-    text: Option<String>,
-    thinking: Option<String>,
-}
-
-fn is_metadata_json(value: &Value) -> bool {
-    if value.get("mcp_servers").is_some() { return true; }
-    if value.get("session").is_some() || value.get("session_id").is_some() { return true; }
-    if value.get("tools").is_some() && value.get("type").is_none() { return true; }
-    if value.get("plugins").is_some() { return true; }
-    if value.get("uuid").is_some() && value.get("type").is_none() { return true; }
-    if let Some(t) = value.get("type").and_then(|v| v.as_str()) {
-        matches!(t, "system" | "init" | "ping" | "session")
-    } else {
-        false
-    }
-}
-
-fn extract_events_from_line(event: &ClaudeStreamEvent) -> Vec<(String, String)> {
-    let mut events = Vec::new();
-    let event_type = event.event_type.as_deref().unwrap_or("");
-
-    if event_type == "content_block_start" {
-        if let Some(block) = &event.content_block {
-            let block_type = block.block_type.as_deref().unwrap_or("");
-            if block_type == "thinking" {
-                events.push(("thinking_start".to_string(), String::new()));
-            }
-        }
-    }
-
-    if event_type == "content_block_stop" {
-        events.push(("block_stop".to_string(), String::new()));
-    }
-
-    if let Some(delta) = &event.delta {
-        if let Some(text) = &delta.thinking {
-            if !text.is_empty() {
-                events.push(("thinking_delta".to_string(), text.clone()));
-            }
-        }
-        if let Some(text) = &delta.text {
-            if !text.is_empty() {
-                events.push(("text_delta".to_string(), text.clone()));
-            }
-        }
-    }
-
-    if let Some(block) = &event.content_block {
-        if let Some(text) = &block.thinking {
-            if !text.is_empty() {
-                events.push(("thinking_delta".to_string(), text.clone()));
-            }
-        }
-        if let Some(text) = &block.text {
-            if !text.is_empty() {
-                events.push(("text_delta".to_string(), text.clone()));
-            }
-        }
-    }
-
-    events
-}
-
 #[tauri::command]
 async fn run_gh_command(args: Vec<String>) -> Result<String, String> {
     spawn_blocking(move || {
@@ -133,6 +56,44 @@ async fn run_gh_command(args: Vec<String>) -> Result<String, String> {
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
             Err(format!("Command failed: {}", stderr))
+        }
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+#[tauri::command]
+async fn run_gh_command_with_input(args: Vec<String>, input: String) -> Result<String, String> {
+    use std::io::Write;
+    spawn_blocking(move || {
+        let mut child = std::process::Command::new("gh")
+            .args(&args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to execute gh command: {}", e))?;
+
+        // Write input to stdin
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(input.as_bytes())
+                .map_err(|e| format!("Failed to write to stdin: {}", e))?;
+        }
+
+        let output = child.wait_with_output()
+            .map_err(|e| format!("Failed to wait for command: {}", e))?;
+
+        if output.status.success() {
+            String::from_utf8(output.stdout).map_err(|e| format!("Failed to parse output: {}", e))
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            // Include both stderr and stdout in error for better debugging
+            if stdout.is_empty() {
+                Err(format!("Command failed: {}", stderr))
+            } else {
+                Err(format!("Command failed: {} | Response: {}", stderr, stdout))
+            }
         }
     })
     .await
@@ -163,10 +124,11 @@ async fn start_ai_stream(
     command: String,
     args: Vec<String>,
     stdin_input: Option<String>,
+    process_id: Option<String>,
     app: AppHandle,
     state: State<'_, AIProcessState>,
 ) -> Result<String, String> {
-    let process_id = uuid::Uuid::new_v4().to_string();
+    let process_id = process_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let process_id_clone = process_id.clone();
 
     let mut child = TokioCommand::new(&command)
@@ -174,6 +136,7 @@ async fn start_ai_stream(
         .stdin(if stdin_input.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .kill_on_drop(true) // Ensure process is killed when dropped
         .spawn()
         .map_err(|e| format!("Failed to spawn {}: {}", command, e))?;
 
@@ -188,24 +151,23 @@ async fn start_ai_stream(
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
     let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
 
-    let processes = state.processes.clone();
-    {
-        let mut map = processes.lock().await;
-        map.insert(process_id.clone(), child);
-    }
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
 
-    // Use channels to signal when stdout/stderr readers are done
+    // Channels to signal when readers are done
     let (stdout_done_tx, stdout_done_rx) = tokio::sync::oneshot::channel::<()>();
     let (stderr_done_tx, stderr_done_rx) = tokio::sync::oneshot::channel::<()>();
 
+    // Collect abort handles to cancel tasks on cleanup
+    let mut abort_handles = Vec::new();
+
+    // Stdout reader task
     let stdout_process_id = process_id.clone();
     let stdout_app = app.clone();
-    tokio::spawn(async move {
+    let stdout_task = tokio::spawn(async move {
         use tokio::io::AsyncReadExt;
         let mut stdout_reader = stdout;
         let mut buffer = Vec::new();
 
-        // Read all stdout into buffer
         if let Ok(_) = stdout_reader.read_to_end(&mut buffer).await {
             let output = String::from_utf8_lossy(&buffer).to_string();
 
@@ -289,10 +251,12 @@ async fn start_ai_stream(
         }
         let _ = stdout_done_tx.send(());
     });
+    abort_handles.push(stdout_task.abort_handle());
 
+    // Stderr reader task
     let stderr_process_id = process_id.clone();
     let stderr_app = app.clone();
-    tokio::spawn(async move {
+    let stderr_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             let _ = stderr_app.emit(
@@ -306,39 +270,36 @@ async fn start_ai_stream(
         }
         let _ = stderr_done_tx.send(());
     });
+    abort_handles.push(stderr_task.abort_handle());
 
+    // Store process handle in state
+    let processes = state.processes.clone();
+    {
+        let mut map = processes.lock().await;
+        map.insert(process_id.clone(), ProcessHandle {
+            abort_handles: abort_handles.clone(),
+            cancel_tx: Some(cancel_tx),
+        });
+    }
+
+    // Completion monitoring task
     let complete_process_id = process_id.clone();
     let complete_app = app;
     let processes_for_cleanup = processes;
-    tokio::spawn(async move {
-        // Wait for process to complete
-        let exit_status = loop {
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-            let mut map = processes_for_cleanup.lock().await;
-            if let Some(child) = map.get_mut(&complete_process_id) {
-                match child.try_wait() {
-                    Ok(Some(status)) => {
-                        map.remove(&complete_process_id);
-                        break Some(status);
-                    }
-                    Ok(None) => continue,
-                    Err(e) => {
-                        let _ = complete_app.emit(
-                            "ai-stream",
-                            AIStreamEvent {
-                                process_id: complete_process_id.clone(),
-                                event_type: "error".to_string(),
-                                data: format!("Error waiting for process: {}", e),
-                            },
-                        );
-                        map.remove(&complete_process_id);
-                        break None;
-                    }
-                }
-            } else {
-                break None;
+    let completion_task = tokio::spawn(async move {
+        let mut cancel_rx = cancel_rx;
+        let exit_status = tokio::select! {
+            status = child.wait() => Some(status),
+            _ = cancel_rx => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                None
             }
+        };
+
+        let exit_status = match exit_status {
+            Some(status) => status,
+            None => return,
         };
 
         // Wait for stdout and stderr readers to finish (with timeout)
@@ -350,20 +311,42 @@ async fn start_ai_stream(
             }
         ).await;
 
-        // Now emit completion event
-        if let Some(status) = exit_status {
-            let exit_code = status.code().unwrap_or(-1);
-            let event_type = if status.success() { "complete" } else { "error" };
-            let _ = complete_app.emit(
-                "ai-stream",
-                AIStreamEvent {
-                    process_id: complete_process_id.clone(),
-                    event_type: event_type.to_string(),
-                    data: format!("Process exited with code {}", exit_code),
-                },
-            );
+        // Remove from process map
+        {
+            let mut map = processes_for_cleanup.lock().await;
+            map.remove(&complete_process_id);
+        }
+
+        // Emit completion event
+        match exit_status {
+            Ok(status) => {
+                let exit_code = status.code().unwrap_or(-1);
+                let event_type = if status.success() { "complete" } else { "error" };
+                let _ = complete_app.emit(
+                    "ai-stream",
+                    AIStreamEvent {
+                        process_id: complete_process_id.clone(),
+                        event_type: event_type.to_string(),
+                        data: format!("Process exited with code {}", exit_code),
+                    },
+                );
+            }
+            Err(e) => {
+                let _ = complete_app.emit(
+                    "ai-stream",
+                    AIStreamEvent {
+                        process_id: complete_process_id.clone(),
+                        event_type: "error".to_string(),
+                        data: format!("Error waiting for process: {}", e),
+                    },
+                );
+            }
         }
     });
+
+    // We don't store the completion task abort handle since we want it to run to completion
+    // But we could add a timeout if needed
+    drop(completion_task);
 
     Ok(process_id_clone)
 }
@@ -376,11 +359,16 @@ async fn cancel_ai_stream(
 ) -> Result<(), String> {
     let mut processes = state.processes.lock().await;
 
-    if let Some(mut child) = processes.remove(&process_id) {
-        child
-            .kill()
-            .await
-            .map_err(|e| format!("Failed to kill process: {}", e))?;
+    if let Some(handle) = processes.remove(&process_id) {
+        // Abort all associated tasks
+        for abort_handle in handle.abort_handles {
+            abort_handle.abort();
+        }
+
+        // Signal completion task to terminate the process
+        if let Some(cancel_tx) = handle.cancel_tx {
+            let _ = cancel_tx.send(());
+        }
 
         let _ = app.emit(
             "ai-stream",
@@ -393,7 +381,8 @@ async fn cancel_ai_stream(
 
         Ok(())
     } else {
-        Err("Process not found".to_string())
+        // Process might have already completed, that's okay
+        Ok(())
     }
 }
 
@@ -404,6 +393,7 @@ pub fn run() {
         .manage(AIProcessState::default())
         .invoke_handler(tauri::generate_handler![
             run_gh_command,
+            run_gh_command_with_input,
             run_shell_command,
             start_ai_stream,
             cancel_ai_stream

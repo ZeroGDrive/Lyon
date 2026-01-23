@@ -146,10 +146,16 @@ function VirtualizedDiff({ file, commentsByLine, onAddComment, scrollToLine, hid
       {!hideHeader && (
         <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-glass-border-subtle bg-glass-bg px-4 py-3">
           <StatusIcon className={cn("size-4 shrink-0", statusColor)} />
-          <div className="min-w-0 flex-1">
-            <span className="font-mono text-sm text-foreground">{file.path}</span>
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <span
+              className="block truncate font-mono text-sm text-foreground"
+              style={{ direction: "rtl", textAlign: "left" }}
+              title={file.path}
+            >
+              {file.path}
+            </span>
             {file.oldPath && file.oldPath !== file.path && (
-              <span className="ml-2 text-xs text-muted-foreground">(from {file.oldPath})</span>
+              <span className="text-xs text-muted-foreground">(from {file.oldPath})</span>
             )}
           </div>
           <span

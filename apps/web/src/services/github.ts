@@ -6,6 +6,59 @@ interface CommandResult<T> {
   error?: string;
 }
 
+interface GraphqlResponse<T> {
+  data?: T;
+  errors?: Array<{ message: string }>;
+}
+
+export interface GhCliStatus {
+  installed: boolean;
+  authenticated: boolean;
+  username?: string;
+  error?: string;
+}
+
+/**
+ * Check if gh CLI is installed and authenticated
+ */
+export async function checkGhCliStatus(): Promise<GhCliStatus> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+
+    // First check if gh is installed
+    try {
+      await invoke<string>("run_shell_command", { command: "which", args: ["gh"] });
+    } catch {
+      return { installed: false, authenticated: false, error: "gh CLI is not installed" };
+    }
+
+    // Check if authenticated by running gh auth status
+    try {
+      await invoke<string>("run_gh_command", { args: ["auth", "status"] });
+      // If we get here, gh is authenticated
+      // Try to get the username
+      try {
+        const userResult = await invoke<string>("run_gh_command", { args: ["api", "user", "-q", ".login"] });
+        return { installed: true, authenticated: true, username: userResult.trim() };
+      } catch {
+        return { installed: true, authenticated: true };
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      if (errorMsg.includes("not logged in") || errorMsg.includes("authentication")) {
+        return { installed: true, authenticated: false, error: "gh CLI is not authenticated" };
+      }
+      return { installed: true, authenticated: false, error: errorMsg };
+    }
+  } catch (error) {
+    return {
+      installed: false,
+      authenticated: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function runGhCommand<T>(args: string[]): Promise<CommandResult<T>> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
@@ -24,6 +77,20 @@ async function runGhCommandRaw(args: string[]): Promise<CommandResult<string>> {
     const { invoke } = await import("@tauri-apps/api/core");
     const result = await invoke<string>("run_gh_command", { args });
     return { success: true, data: result };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+// For commands that don't return meaningful output (merge, close, approve, etc.)
+async function runGhCommandVoid(args: string[]): Promise<CommandResult<void>> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke<string>("run_gh_command", { args });
+    return { success: true };
   } catch (error) {
     return {
       success: false,
@@ -64,19 +131,20 @@ interface GhPRViewResult {
   changedFiles: number;
   commits: { totalCount: number };
   reviewDecision: string | null;
-  reviews: {
-    totalCount: number;
-    nodes: Array<{
-      id: string;
-      author: { login: string };
-      state: string;
-      body: string | null;
-      submittedAt: string;
-    }>;
-  };
-  reviewRequests: { nodes: Array<{ requestedReviewer: { login: string } }> };
-  labels: { nodes: Array<{ id: string; name: string; color: string; description: string | null }> };
-  assignees: { nodes: Array<{ login: string; avatarUrl: string; url: string }> };
+  // gh pr view --json reviews returns a flat array, not { totalCount, nodes }
+  reviews: Array<{
+    id: string;
+    author: { login: string };
+    state: string;
+    body: string | null;
+    submittedAt: string;
+  }>;
+  // gh pr view --json reviewRequests returns a flat array
+  reviewRequests: Array<{ login: string }>;
+  // gh pr view --json labels returns a flat array
+  labels: Array<{ id: string; name: string; color: string; description: string | null }>;
+  // gh pr view --json assignees returns a flat array
+  assignees: Array<{ login: string; avatarUrl: string; url: string }>;
   createdAt: string;
   updatedAt: string;
   mergedAt: string | null;
@@ -115,7 +183,7 @@ function convertGhPRViewToPullRequest(ghPR: GhPRViewResult, repo: string): PullR
     changedFiles: ghPR.changedFiles ?? 0,
     commits: ghPR.commits?.totalCount ?? 0,
     reviewDecision: (ghPR.reviewDecision as PullRequest["reviewDecision"]) ?? null,
-    reviews: (ghPR.reviews?.nodes ?? [])
+    reviews: (ghPR.reviews ?? [])
       .filter((r) => r?.author?.login)
       .map((r) => ({
         id: r.id,
@@ -128,22 +196,22 @@ function convertGhPRViewToPullRequest(ghPR: GhPRViewResult, repo: string): PullR
         body: r.body,
         submittedAt: r.submittedAt,
       })),
-    reviewRequests: (ghPR.reviewRequests?.nodes ?? [])
-      .filter((rr) => rr?.requestedReviewer?.login)
+    reviewRequests: (ghPR.reviewRequests ?? [])
+      .filter((rr) => rr?.login)
       .map((rr) => ({
         requestedReviewer: {
-          login: rr.requestedReviewer.login,
-          avatarUrl: `https://github.com/${rr.requestedReviewer.login}.png`,
-          url: `https://github.com/${rr.requestedReviewer.login}`,
+          login: rr.login,
+          avatarUrl: `https://github.com/${rr.login}.png`,
+          url: `https://github.com/${rr.login}`,
         },
       })),
-    labels: (ghPR.labels?.nodes ?? []).map((l) => ({
+    labels: (ghPR.labels ?? []).map((l) => ({
       id: l.id,
       name: l.name,
       color: l.color,
       description: l.description,
     })),
-    assignees: (ghPR.assignees?.nodes ?? []).map((a) => ({
+    assignees: (ghPR.assignees ?? []).map((a) => ({
       login: a.login,
       avatarUrl: a.avatarUrl,
       url: a.url,
@@ -494,6 +562,45 @@ export async function addPullRequestComment(
   return runGhCommand<Comment>(["pr", "comment", String(prNumber), "--repo", repo, "--body", body]);
 }
 
+async function runGhCommandWithInput<T>(args: string[], input: string): Promise<CommandResult<T>> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    console.log("Running gh command with input:", args, input);
+    const result = await invoke<string>("run_gh_command_with_input", { args, input });
+    return { success: true, data: JSON.parse(result) as T };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error("gh command failed:", errorMsg);
+    return {
+      success: false,
+      error: errorMsg,
+    };
+  }
+}
+
+async function runGhGraphql<T>(query: string, variables: Record<string, unknown>): Promise<CommandResult<T>> {
+  const payload = JSON.stringify({ query, variables });
+  const result = await runGhCommandWithInput<GraphqlResponse<T>>(
+    ["api", "graphql", "--input", "-"],
+    payload,
+  );
+
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+
+  const errors = result.data?.errors ?? [];
+  if (errors.length > 0) {
+    return { success: false, error: errors.map((e) => e.message).join("; ") };
+  }
+
+  if (!result.data?.data) {
+    return { success: false, error: "Empty response from GitHub GraphQL API" };
+  }
+
+  return { success: true, data: result.data.data };
+}
+
 export async function addReviewComment(
   repo: string,
   prNumber: number,
@@ -502,29 +609,158 @@ export async function addReviewComment(
   line: number,
   commitId: string,
   side: "LEFT" | "RIGHT" = "RIGHT",
+  reviewNodeId?: string,
 ): Promise<CommandResult<Comment>> {
-  // Use the direct comments endpoint
-  // https://docs.github.com/en/rest/pulls/comments#create-a-review-comment-for-a-pull-request
-  return runGhCommand<Comment>([
+  if (reviewNodeId) {
+    const query = `
+      mutation($input: AddPullRequestReviewThreadInput!) {
+        addPullRequestReviewThread(input: $input) {
+          thread {
+            id
+          }
+        }
+      }
+    `;
+
+    const result = await runGhGraphql<{
+      addPullRequestReviewThread: { thread: { id: string } };
+    }>(query, {
+      input: {
+        pullRequestReviewId: reviewNodeId,
+        body,
+        path,
+        line,
+        side,
+        subjectType: "LINE",
+      },
+    });
+
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+
+    return { success: true };
+  }
+
+  const payload = JSON.stringify({
+    body,
+    commit_id: commitId,
+    path,
+    line,
+    side,
+  });
+
+  return runGhCommandWithInput<Comment>([
     "api",
-    "--method",
-    "POST",
+    "--method", "POST",
+    "-H", "Accept: application/vnd.github+json",
     `repos/${repo}/pulls/${prNumber}/comments`,
-    "-f",
-    `body=${body}`,
-    "-f",
-    `commit_id=${commitId}`,
-    "-f",
-    `path=${path}`,
-    "-F",
-    `line=${line}`,
-    "-f",
-    `side=${side}`,
+    "--input", "-",
+  ], payload);
+}
+
+// Pending review management
+
+interface GhPendingReview {
+  id: number;
+  node_id?: string;
+  user: {
+    login: string;
+  };
+  body: string;
+  state: "PENDING" | "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED";
+  submitted_at: string | null;
+}
+
+export interface PendingReview {
+  id: number;
+  nodeId: string;
+  user: {
+    login: string;
+  };
+  body: string;
+  state: "PENDING" | "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED";
+  submittedAt: string | null;
+}
+
+export async function getPendingReview(
+  repo: string,
+  prNumber: number,
+): Promise<CommandResult<PendingReview | null>> {
+  // Get all reviews and find pending one for current user
+  const reviewsResult = await runGhCommand<GhPendingReview[]>([
+    "api",
+    `repos/${repo}/pulls/${prNumber}/reviews`,
+  ]);
+
+  if (!reviewsResult.success) {
+    return { success: false, error: reviewsResult.error };
+  }
+
+  // Get current user
+  const userResult = await runGhCommand<{ login: string }>(["api", "user"]);
+  if (!userResult.success || !userResult.data) {
+    return { success: false, error: userResult.error ?? "Failed to get current user" };
+  }
+
+  const currentUser = userResult.data.login;
+  const pendingReview = reviewsResult.data?.find(
+    (r) => r.state === "PENDING" && r.user.login === currentUser
+  );
+
+  if (!pendingReview) {
+    return { success: true, data: null };
+  }
+
+  return {
+    success: true,
+    data: {
+      id: pendingReview.id,
+      nodeId: pendingReview.node_id ?? "",
+      user: pendingReview.user,
+      body: pendingReview.body,
+      state: pendingReview.state,
+      submittedAt: pendingReview.submitted_at,
+    },
+  };
+}
+
+export async function submitPendingReview(
+  repo: string,
+  prNumber: number,
+  reviewId: number,
+  event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT" = "COMMENT",
+  body?: string,
+): Promise<CommandResult<void>> {
+  const payload = JSON.stringify({
+    event,
+    body: body ?? "",
+  });
+
+  return runGhCommandWithInput<void>([
+    "api",
+    "--method", "POST",
+    "-H", "Accept: application/vnd.github+json",
+    `repos/${repo}/pulls/${prNumber}/reviews/${reviewId}/events`,
+    "--input", "-",
+  ], payload);
+}
+
+export async function deletePendingReview(
+  repo: string,
+  prNumber: number,
+  reviewId: number,
+): Promise<CommandResult<void>> {
+  return runGhCommand<void>([
+    "api",
+    "--method", "DELETE",
+    "-H", "Accept: application/vnd.github+json",
+    `repos/${repo}/pulls/${prNumber}/reviews/${reviewId}`,
   ]);
 }
 
 interface GhReviewComment {
-  id: number;
+  id: number | string;
   body: string;
   path: string;
   line: number | null;
@@ -548,6 +784,118 @@ export async function getReviewComments(
     `repos/${repo}/pulls/${prNumber}/comments`,
     "--paginate",
   ]);
+}
+
+interface GhPendingReviewThreadComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  state: "PENDING" | "SUBMITTED";
+  viewerDidAuthor: boolean;
+  author: {
+    login: string;
+    avatarUrl: string;
+  } | null;
+  pullRequestReview: { id: string } | null;
+}
+
+interface GhPendingReviewThread {
+  path: string;
+  line: number | null;
+  originalLine: number | null;
+  diffSide: "LEFT" | "RIGHT" | null;
+  startDiffSide: "LEFT" | "RIGHT" | null;
+  comments: {
+    nodes: GhPendingReviewThreadComment[];
+  };
+}
+
+export async function getPendingReviewComments(
+  repo: string,
+  prNumber: number,
+  reviewNodeId: string,
+): Promise<CommandResult<GhReviewComment[]>> {
+  const [owner, name] = repo.split("/");
+  const query = `
+    query($owner: String!, $name: String!, $number: Int!) {
+      repository(owner: $owner, name: $name) {
+        pullRequest(number: $number) {
+          reviewThreads(first: 100) {
+            nodes {
+              path
+              line
+              originalLine
+              diffSide
+              startDiffSide
+              comments(first: 100) {
+                nodes {
+                  id
+                  body
+                  createdAt
+                  updatedAt
+                  state
+                  viewerDidAuthor
+                  author {
+                    login
+                    avatarUrl
+                  }
+                  pullRequestReview {
+                    id
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const result = await runGhGraphql<{
+    repository: {
+      pullRequest: {
+        reviewThreads: {
+          nodes: GhPendingReviewThread[];
+        };
+      } | null;
+    } | null;
+  }>(query, { owner, name, number: prNumber });
+
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+
+  const threads = result.data.repository?.pullRequest?.reviewThreads.nodes ?? [];
+  const mapped: GhReviewComment[] = [];
+
+  for (const thread of threads) {
+    const side = thread.diffSide ?? thread.startDiffSide ?? "RIGHT";
+    const line = thread.line ?? thread.originalLine;
+    if (!line || !thread.path) continue;
+
+    for (const comment of thread.comments.nodes) {
+      const belongsToReview = comment.pullRequestReview?.id === reviewNodeId;
+      const isViewerDraft = comment.state === "PENDING" && comment.viewerDidAuthor;
+      if (!belongsToReview && !isViewerDraft) continue;
+      mapped.push({
+        id: comment.id,
+        body: comment.body,
+        path: thread.path,
+        line,
+        original_line: thread.originalLine,
+        side,
+        user: {
+          login: comment.author?.login ?? "unknown",
+          avatar_url: comment.author?.avatarUrl ?? "",
+        },
+        created_at: comment.createdAt,
+        updated_at: comment.updatedAt,
+      });
+    }
+  }
+
+  return { success: true, data: mapped };
 }
 
 export function convertToCommentsByLine(
@@ -582,12 +930,31 @@ export function convertToCommentsByLine(
   return commentsByLine;
 }
 
+export function convertReviewCommentsToComments(
+  comments: GhReviewComment[],
+): Comment[] {
+  return comments.map((comment) => ({
+    id: String(comment.id),
+    author: {
+      login: comment.user.login,
+      avatarUrl: comment.user.avatar_url,
+      url: `https://github.com/${comment.user.login}`,
+    },
+    body: comment.body,
+    createdAt: comment.created_at,
+    updatedAt: comment.updated_at,
+    url: "",
+    path: comment.path,
+    line: comment.line ?? comment.original_line ?? undefined,
+  }));
+}
+
 export async function mergePullRequest(
   repo: string,
   prNumber: number,
   method: "merge" | "squash" | "rebase" = "merge",
 ): Promise<CommandResult<void>> {
-  return runGhCommand<void>([
+  return runGhCommandVoid([
     "pr",
     "merge",
     String(prNumber),
@@ -602,7 +969,7 @@ export async function closePullRequest(
   repo: string,
   prNumber: number,
 ): Promise<CommandResult<void>> {
-  return runGhCommand<void>(["pr", "close", String(prNumber), "--repo", repo]);
+  return runGhCommandVoid(["pr", "close", String(prNumber), "--repo", repo]);
 }
 
 export async function approvePullRequest(
@@ -614,7 +981,7 @@ export async function approvePullRequest(
   if (body) {
     args.push("--body", body);
   }
-  return runGhCommand<void>(args);
+  return runGhCommandVoid(args);
 }
 
 export async function requestChanges(
@@ -622,7 +989,7 @@ export async function requestChanges(
   prNumber: number,
   body: string,
 ): Promise<CommandResult<void>> {
-  return runGhCommand<void>([
+  return runGhCommandVoid([
     "pr",
     "review",
     String(prNumber),
@@ -635,7 +1002,7 @@ export async function requestChanges(
 }
 
 export async function deleteBranch(repo: string, branchName: string): Promise<CommandResult<void>> {
-  return runGhCommand<void>([
+  return runGhCommandVoid([
     "api",
     "--method",
     "DELETE",

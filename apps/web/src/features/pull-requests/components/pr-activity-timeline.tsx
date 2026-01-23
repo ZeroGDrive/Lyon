@@ -4,6 +4,8 @@ import { formatDistanceToNow } from "date-fns";
 import {
   CheckCircle,
   Clock,
+  ExternalLink,
+  FileCode,
   GitCommit,
   GitPullRequest,
   MessageCircle,
@@ -17,7 +19,7 @@ import { cn } from "@/lib/utils";
 
 interface TimelineEvent {
   id: string;
-  type: "review" | "comment" | "created" | "merged" | "closed";
+  type: "review" | "review-comment" | "created" | "merged" | "closed";
   timestamp: string;
   author: {
     login: string;
@@ -25,12 +27,16 @@ interface TimelineEvent {
   };
   content?: string | null;
   reviewState?: PullRequestReview["state"];
+  // For review comments (inline comments on files)
+  path?: string;
+  line?: number;
 }
 
 interface PRActivityTimelineProps {
   pr: PullRequest;
   comments?: Comment[];
   className?: string;
+  onCommentClick?: (path: string, line: number) => void;
 }
 
 const reviewStateConfig = {
@@ -66,7 +72,7 @@ const reviewStateConfig = {
   },
 };
 
-function PRActivityTimeline({ pr, comments, className }: PRActivityTimelineProps) {
+function PRActivityTimeline({ pr, comments, className, onCommentClick }: PRActivityTimelineProps) {
   const events = useMemo(() => {
     const allEvents: TimelineEvent[] = [];
 
@@ -91,18 +97,21 @@ function PRActivityTimeline({ pr, comments, className }: PRActivityTimelineProps
       });
     }
 
-    // Comments (if provided)
+    // Review comments (file-specific only)
     if (comments) {
       for (const comment of comments) {
-        // Skip review comments (they have a path)
-        if (comment.path) continue;
-        allEvents.push({
-          id: `comment-${comment.id}`,
-          type: "comment",
-          timestamp: comment.createdAt,
-          author: comment.author,
-          content: comment.body,
-        });
+        // Only include comments with both path and line (file-specific)
+        if (comment.path && comment.line) {
+          allEvents.push({
+            id: `review-comment-${comment.id}`,
+            type: "review-comment",
+            timestamp: comment.createdAt,
+            author: comment.author,
+            content: comment.body,
+            path: comment.path,
+            line: comment.line,
+          });
+        }
       }
     }
 
@@ -135,13 +144,17 @@ function PRActivityTimeline({ pr, comments, className }: PRActivityTimelineProps
   return (
     <GlassCard className={cn("p-4", className)} variant="subtle">
       <h3 className="mb-4 text-sm font-semibold text-foreground">Activity</h3>
-      <div className="relative">
-        {/* Timeline line */}
-        <div className="absolute left-4 top-0 bottom-0 w-px bg-glass-border" />
+      <div className="relative pl-10">
+        {/* Timeline line - positioned to the left of content */}
+        <div className="absolute left-[13px] top-0 bottom-0 w-px bg-glass-border" />
 
         <div className="space-y-4">
           {events.map((event) => (
-            <TimelineEventItem key={event.id} event={event} />
+            <TimelineEventItem
+              key={event.id}
+              event={event}
+              onCommentClick={onCommentClick}
+            />
           ))}
         </div>
       </div>
@@ -151,80 +164,107 @@ function PRActivityTimeline({ pr, comments, className }: PRActivityTimelineProps
 
 interface TimelineEventItemProps {
   event: TimelineEvent;
+  onCommentClick?: (path: string, line: number) => void;
 }
 
 const TimelineEventItem = memo(function TimelineEventItem({
   event,
+  onCommentClick,
 }: TimelineEventItemProps) {
   const timeAgo = formatDistanceToNow(new Date(event.timestamp), {
     addSuffix: true,
   });
 
+  // Icon container positioned absolutely to the left
+  const IconWrapper = ({ children, bgColor }: { children: React.ReactNode; bgColor: string }) => (
+    <div
+      className={cn(
+        "absolute -left-10 flex size-7 items-center justify-center rounded-full bg-background",
+        bgColor
+      )}
+    >
+      {children}
+    </div>
+  );
+
   if (event.type === "created") {
     return (
-      <div className="relative flex gap-3 pl-1">
-        <div className="relative z-10 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10">
+      <div className="relative">
+        <IconWrapper bgColor="bg-primary/10">
           <GitPullRequest className="size-3.5 text-primary" />
-        </div>
-        <div className="flex-1 pt-0.5">
-          <p className="text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{event.author.login}</span>{" "}
-            opened this pull request{" "}
-            <span className="text-muted-foreground/70">{timeAgo}</span>
-          </p>
-        </div>
+        </IconWrapper>
+        <p className="text-xs text-muted-foreground pt-1">
+          <span className="font-medium text-foreground">{event.author.login}</span>{" "}
+          opened this pull request{" "}
+          <span className="text-muted-foreground/70">{timeAgo}</span>
+        </p>
       </div>
     );
   }
 
   if (event.type === "merged") {
     return (
-      <div className="relative flex gap-3 pl-1">
-        <div className="relative z-10 flex size-7 shrink-0 items-center justify-center rounded-full bg-purple-400/10">
+      <div className="relative">
+        <IconWrapper bgColor="bg-purple-400/10">
           <GitCommit className="size-3.5 text-purple-400" />
-        </div>
-        <div className="flex-1 pt-0.5">
-          <p className="text-xs text-muted-foreground">
-            Pull request was <span className="font-medium text-purple-400">merged</span>{" "}
-            <span className="text-muted-foreground/70">{timeAgo}</span>
-          </p>
-        </div>
+        </IconWrapper>
+        <p className="text-xs text-muted-foreground pt-1">
+          Pull request was <span className="font-medium text-purple-400">merged</span>{" "}
+          <span className="text-muted-foreground/70">{timeAgo}</span>
+        </p>
       </div>
     );
   }
 
   if (event.type === "closed") {
     return (
-      <div className="relative flex gap-3 pl-1">
-        <div className="relative z-10 flex size-7 shrink-0 items-center justify-center rounded-full bg-red-400/10">
+      <div className="relative">
+        <IconWrapper bgColor="bg-red-400/10">
           <XCircle className="size-3.5 text-red-400" />
-        </div>
-        <div className="flex-1 pt-0.5">
-          <p className="text-xs text-muted-foreground">
-            Pull request was <span className="font-medium text-red-400">closed</span>{" "}
-            <span className="text-muted-foreground/70">{timeAgo}</span>
-          </p>
-        </div>
+        </IconWrapper>
+        <p className="text-xs text-muted-foreground pt-1">
+          Pull request was <span className="font-medium text-red-400">closed</span>{" "}
+          <span className="text-muted-foreground/70">{timeAgo}</span>
+        </p>
       </div>
     );
   }
 
-  if (event.type === "comment") {
+  if (event.type === "review-comment" && event.path && event.line) {
+    const isClickable = !!onCommentClick;
+    const fileName = event.path.split("/").pop() ?? event.path;
+
     return (
-      <div className="relative flex gap-3 pl-1">
-        <img
-          src={event.author.avatarUrl}
-          alt={event.author.login}
-          className="relative z-10 size-7 shrink-0 rounded-full"
-        />
-        <div className="flex-1">
-          <p className="text-xs text-muted-foreground">
+      <div className="relative">
+        <IconWrapper bgColor="bg-blue-400/10">
+          <FileCode className="size-3.5 text-blue-400" />
+        </IconWrapper>
+        <div>
+          <p className="text-xs text-muted-foreground pt-1">
             <span className="font-medium text-foreground">{event.author.login}</span>{" "}
-            commented{" "}
+            commented on{" "}
+            {isClickable ? (
+              <button
+                type="button"
+                onClick={() => onCommentClick(event.path!, event.line!)}
+                className="inline-flex items-center gap-1 font-mono text-blue-400 hover:text-blue-300 hover:underline"
+              >
+                {fileName}:{event.line}
+                <ExternalLink className="size-3" />
+              </button>
+            ) : (
+              <span className="font-mono text-blue-400">{fileName}:{event.line}</span>
+            )}{" "}
             <span className="text-muted-foreground/70">{timeAgo}</span>
           </p>
           {event.content && (
-            <div className="mt-2 rounded-lg border border-glass-border-subtle bg-background/50 p-3">
+            <div
+              className={cn(
+                "mt-2 rounded-lg border border-glass-border-subtle bg-background/50 p-3",
+                isClickable && "cursor-pointer hover:border-blue-400/50 transition-colors"
+              )}
+              onClick={isClickable ? () => onCommentClick(event.path!, event.line!) : undefined}
+            >
               <div className="prose prose-sm prose-invert max-w-none text-xs prose-p:text-muted-foreground">
                 <Markdown>{event.content}</Markdown>
               </div>
@@ -240,17 +280,12 @@ const TimelineEventItem = memo(function TimelineEventItem({
     const Icon = config.icon;
 
     return (
-      <div className="relative flex gap-3 pl-1">
-        <div
-          className={cn(
-            "relative z-10 flex size-7 shrink-0 items-center justify-center rounded-full",
-            config.bgColor
-          )}
-        >
+      <div className="relative">
+        <IconWrapper bgColor={config.bgColor}>
           <Icon className={cn("size-3.5", config.color)} />
-        </div>
-        <div className="flex-1">
-          <p className="text-xs text-muted-foreground">
+        </IconWrapper>
+        <div>
+          <p className="text-xs text-muted-foreground pt-1">
             <span className="font-medium text-foreground">{event.author.login}</span>{" "}
             <span className={config.color}>{config.label}</span>{" "}
             <span className="text-muted-foreground/70">{timeAgo}</span>

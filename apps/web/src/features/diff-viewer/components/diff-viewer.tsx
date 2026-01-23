@@ -139,6 +139,7 @@ function DiffViewer({
           <UnifiedDiffView
             files={files}
             scrollToFile={scrollToFile}
+            scrollToLine={scrollToLine}
             commentsByLine={commentsByLine}
             onAddComment={onAddComment}
           />

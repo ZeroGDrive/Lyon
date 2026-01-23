@@ -224,6 +224,7 @@ const LeftLine = memo(function LeftLine({
         "flex h-6 font-mono text-xs",
         isDeletion && "bg-red-500/10"
       )}
+      data-line={line.oldLineNumber}
     >
       <LineCommentPopover
         lineNumber={line.oldLineNumber}
@@ -282,6 +283,7 @@ const RightLine = memo(function RightLine({
         "flex h-6 font-mono text-xs",
         isAddition && "bg-green-500/10"
       )}
+      data-line={line.newLineNumber}
     >
       <LineCommentPopover
         lineNumber={line.newLineNumber}

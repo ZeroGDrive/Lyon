@@ -1,10 +1,12 @@
 import type { PullRequest } from "@/types";
 
+import { open } from "@tauri-apps/plugin-shell";
 import {
   AlertTriangle,
   Check,
   CheckCircle,
   Clock,
+  ExternalLink,
   Files,
   GitBranch,
   GitMerge,
@@ -47,7 +49,7 @@ interface PRDetailProps {
   isLoading?: boolean;
 }
 
-function PRDetail({ pr, isLoading }: PRDetailProps) {
+function PRDetail({ pr }: PRDetailProps) {
   const reviewStatusIcon =
     pr.reviewDecision === "APPROVED" ? (
       <CheckCircle className="size-4 text-green-400" />
@@ -67,12 +69,12 @@ function PRDetail({ pr, isLoading }: PRDetailProps) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <GlassCard className="p-4" variant="subtle">
+      <div className="flex flex-wrap gap-4">
+        <GlassCard className="min-w-[160px] flex-1 p-4" variant="subtle">
           <div className="flex items-center gap-3">
             <div
               className={cn(
-                "flex size-10 items-center justify-center rounded-lg",
+                "flex size-10 shrink-0 items-center justify-center rounded-lg",
                 currentState.bgColor,
               )}
             >
@@ -92,9 +94,9 @@ function PRDetail({ pr, isLoading }: PRDetailProps) {
           </div>
         </GlassCard>
 
-        <GlassCard className="p-4" variant="subtle">
+        <GlassCard className="min-w-[160px] flex-1 p-4" variant="subtle">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
               <GitBranch className="size-5 text-primary" />
             </div>
             <div className="min-w-0 flex-1">
@@ -106,11 +108,11 @@ function PRDetail({ pr, isLoading }: PRDetailProps) {
           </div>
         </GlassCard>
 
-        <GlassCard className="p-4" variant="subtle">
+        <GlassCard className="min-w-[160px] flex-1 p-4" variant="subtle">
           <div className="flex items-center gap-3">
             <div
               className={cn(
-                "flex size-10 items-center justify-center rounded-lg",
+                "flex size-10 shrink-0 items-center justify-center rounded-lg",
                 pr.reviewDecision === "APPROVED"
                   ? "bg-green-400/10"
                   : pr.reviewDecision === "CHANGES_REQUESTED"
@@ -143,10 +145,10 @@ function PRDetail({ pr, isLoading }: PRDetailProps) {
         </GlassCard>
 
         {(pr.additions > 0 || pr.deletions > 0 || pr.changedFiles > 0) && (
-          <GlassCard className="p-4" variant="subtle">
+          <GlassCard className="min-w-[160px] flex-1 p-4" variant="subtle">
             <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-blue-400/10">
-                <Files className="size-5 text-blue-400" />
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                <Files className="size-5 text-primary" />
               </div>
               <div>
                 <p className="text-sm font-medium text-foreground">Changes</p>
@@ -192,6 +194,7 @@ function PRDetail({ pr, isLoading }: PRDetailProps) {
 
 interface PRActionsProps {
   pr: PullRequest;
+  currentUser?: string | null;
   onMerge?: () => void;
   onClose?: () => void;
   onApprove?: () => void;
@@ -202,6 +205,7 @@ interface PRActionsProps {
 
 function PRActions({
   pr,
+  currentUser,
   onMerge,
   onClose,
   onApprove,
@@ -213,8 +217,11 @@ function PRActions({
   const [requestChangesComment, setRequestChangesComment] = useState("");
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
 
-  const canMerge = pr.mergeable && pr.state === "open" && !pr.draft;
+  // Allow merge when mergeable is true or null (unknown), only block when explicitly false (conflicts)
+  const canMerge = pr.mergeable !== false && pr.state === "open" && !pr.draft;
   const anyActionLoading = loadingAction !== null && loadingAction !== undefined;
+  // Can't review your own PR on GitHub
+  const isOwnPR = currentUser && pr.author.login === currentUser;
 
   const handleRequestChanges = () => {
     if (requestChangesComment.trim() && onRequestChanges) {
@@ -229,45 +236,75 @@ function PRActions({
     setCloseDialogOpen(false);
   };
 
-  if (pr.state !== "open") return null;
+  const prUrl = `https://github.com/${pr.repository.fullName}/pull/${pr.number}`;
 
-  return (
-    <div className="flex flex-wrap gap-2">
-      {/* Approve Button */}
+  const openInGitHub = () => {
+    open(prUrl).catch(console.error);
+  };
+
+  if (pr.state !== "open") {
+    return (
       <Button
         variant="outline"
         size="sm"
-        onClick={onApprove}
-        disabled={anyActionLoading || isLoading}
-        className="border-green-500/30 text-green-500 hover:bg-green-500/10 hover:text-green-400"
+        onClick={openInGitHub}
       >
-        {loadingAction === "approve" ? (
-          <Loader2 className="mr-1.5 size-4 animate-spin" />
-        ) : (
-          <Check className="mr-1.5 size-4" />
-        )}
-        Approve
+        <ExternalLink className="mr-1.5 size-4" />
+        Open in GitHub
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {/* Open in GitHub */}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={openInGitHub}
+      >
+        <ExternalLink className="mr-1.5 size-4" />
+        GitHub
       </Button>
 
-      {/* Request Changes Dialog */}
-      <Dialog open={requestChangesOpen} onOpenChange={setRequestChangesOpen}>
-        <DialogTrigger
-          render={
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={anyActionLoading || isLoading}
-              className="border-yellow-500/30 text-yellow-500 hover:bg-yellow-500/10 hover:text-yellow-400"
-            />
-          }
+      {/* Approve Button - hidden for own PR */}
+      {!isOwnPR && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onApprove}
+          disabled={anyActionLoading || isLoading}
+          className="border-green-500/30 text-green-500 hover:bg-green-500/10 hover:text-green-400"
         >
-          {loadingAction === "changes" ? (
+          {loadingAction === "approve" ? (
             <Loader2 className="mr-1.5 size-4 animate-spin" />
           ) : (
-            <MessageSquareWarning className="mr-1.5 size-4" />
+            <Check className="mr-1.5 size-4" />
           )}
-          Request Changes
-        </DialogTrigger>
+          Approve
+        </Button>
+      )}
+
+      {/* Request Changes Dialog - hidden for own PR */}
+      {!isOwnPR && (
+        <Dialog open={requestChangesOpen} onOpenChange={setRequestChangesOpen}>
+          <DialogTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={anyActionLoading || isLoading}
+                className="border-yellow-500/30 text-yellow-500 hover:bg-yellow-500/10 hover:text-yellow-400"
+              />
+            }
+          >
+            {loadingAction === "changes" ? (
+              <Loader2 className="mr-1.5 size-4 animate-spin" />
+            ) : (
+              <MessageSquareWarning className="mr-1.5 size-4" />
+            )}
+            Request Changes
+          </DialogTrigger>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Request Changes</DialogTitle>
@@ -299,7 +336,8 @@ function PRActions({
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+        </Dialog>
+      )}
 
       {/* Merge Button */}
       <Button

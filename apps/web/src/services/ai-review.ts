@@ -83,100 +83,120 @@ export async function startStreamingAIReview(
   const command = getProviderCommand(config.provider);
   const prompt = buildReviewPrompt(prInfo, config.systemPrompt);
   const providerConfig = getProviderConfig(config.provider, config.model, config.reasoningEffort, prompt);
+  const processId = crypto.randomUUID();
 
   console.log("[AI Review] Starting review with provider:", config.provider, "model:", config.model, "reasoning:", config.reasoningEffort);
   console.log("[AI Review] Command:", command);
   console.log("[AI Review] PR:", prInfo.repository, "#", prInfo.number);
-  console.log("[AI Review] Full prompt:\n", prompt);
 
-  let fullOutput = "";
-  let stderrOutput = "";
-  let processId: string | null = null;
-  let unlistenStream: (() => void) | null = null;
-  let unlistenContent: (() => void) | null = null;
-
-  const cleanup = () => {
-    unlistenStream?.();
-    unlistenContent?.();
+  // Use a state object to track cleanup and prevent memory leaks
+  const state = {
+    fullOutput: "",
+    stderrOutput: "",
+    processId,
+    unlistenStream: null as (() => void) | null,
+    unlistenContent: null as (() => void) | null,
+    isCleanedUp: false,
   };
 
-  const streamPromise = listen<AIStreamEvent>("ai-stream", (event) => {
-    if (processId && event.payload.process_id !== processId) return;
+  const cleanup = () => {
+    if (state.isCleanedUp) return;
+    state.isCleanedUp = true;
 
-    console.log("[AI Review] Stream event:", event.payload.event_type, event.payload.data?.slice(0, 200));
+    // Remove event listeners
+    state.unlistenStream?.();
+    state.unlistenContent?.();
 
-    switch (event.payload.event_type) {
-      case "stdout":
-        console.log("[AI Review] stdout:", event.payload.data);
-        break;
-      case "stderr":
-        console.warn("[AI Review] stderr:", event.payload.data);
-        stderrOutput += event.payload.data + "\n";
-        break;
-      case "complete":
-        console.log("[AI Review] Process complete. Output length:", fullOutput.length);
-        console.log("[AI Review] Full output preview:", fullOutput.slice(0, 500));
-        callbacks.onComplete(fullOutput);
-        cleanup();
-        break;
-      case "error": {
-        console.error("[AI Review] Process error:", event.payload.data);
-        console.error("[AI Review] stderr output:", stderrOutput);
-        console.error("[AI Review] stdout output:", fullOutput);
-        const errorMsg = stderrOutput.trim()
-          ? `${event.payload.data}\n\nStderr:\n${stderrOutput.trim()}`
-          : fullOutput.trim()
-            ? `${event.payload.data}\n\nOutput:\n${fullOutput.trim()}`
-            : event.payload.data;
-        callbacks.onError(errorMsg);
-        cleanup();
-        break;
-      }
-      case "cancelled":
-        console.log("[AI Review] Process cancelled");
-        callbacks.onError("Review cancelled");
-        cleanup();
-        break;
-    }
-  });
-
-  const contentPromise = listen<AIContentEvent>("ai-content", (event) => {
-    if (processId && event.payload.process_id !== processId) return;
-
-    console.log("[AI Review] Content event:", event.payload.event_type, "text length:", event.payload.text?.length ?? 0);
-
-    switch (event.payload.event_type) {
-      case "thinking_start":
-        console.log("[AI Review] Thinking started");
-        callbacks.onThinkingStart();
-        break;
-      case "thinking_delta":
-        console.log("[AI Review] Thinking delta:", event.payload.text?.slice(0, 100));
-        fullOutput += event.payload.text;
-        callbacks.onThinkingDelta(event.payload.text);
-        break;
-      case "text_delta":
-        console.log("[AI Review] Text delta:", event.payload.text?.slice(0, 100));
-        fullOutput += event.payload.text;
-        callbacks.onTextDelta(event.payload.text);
-        break;
-      case "block_stop":
-        console.log("[AI Review] Block stopped. Total output so far:", fullOutput.length);
-        callbacks.onBlockStop();
-        break;
-    }
-  });
+    // Nullify references to help GC
+    state.unlistenStream = null;
+    state.unlistenContent = null;
+    state.fullOutput = "";
+    state.stderrOutput = "";
+  };
 
   try {
-    unlistenStream = await streamPromise;
-    unlistenContent = await contentPromise;
+    // Set up event listeners first
+    state.unlistenStream = await listen<AIStreamEvent>("ai-stream", (event) => {
+      // Skip if already cleaned up or different process
+      if (state.isCleanedUp) return;
+      if (event.payload.process_id !== state.processId) return;
+
+      console.log("[AI Review] Stream event:", event.payload.event_type, event.payload.data?.slice(0, 200));
+
+      switch (event.payload.event_type) {
+        case "stdout":
+          console.log("[AI Review] stdout:", event.payload.data);
+          break;
+        case "stderr":
+          console.warn("[AI Review] stderr:", event.payload.data);
+          state.stderrOutput += event.payload.data + "\n";
+          break;
+        case "complete": {
+          console.log("[AI Review] Process complete. Output length:", state.fullOutput.length);
+          const output = state.fullOutput;
+          cleanup();
+          callbacks.onComplete(output);
+          break;
+        }
+        case "error": {
+          console.error("[AI Review] Process error:", event.payload.data);
+          const errorMsg = state.stderrOutput.trim()
+            ? `${event.payload.data}\n\nStderr:\n${state.stderrOutput.trim()}`
+            : state.fullOutput.trim()
+              ? `${event.payload.data}\n\nOutput:\n${state.fullOutput.trim()}`
+              : event.payload.data;
+          cleanup();
+          callbacks.onError(errorMsg);
+          break;
+        }
+        case "cancelled":
+          console.log("[AI Review] Process cancelled");
+          cleanup();
+          callbacks.onError("Review cancelled");
+          break;
+      }
+    });
+
+    state.unlistenContent = await listen<AIContentEvent>("ai-content", (event) => {
+      // Skip if already cleaned up or different process
+      if (state.isCleanedUp) return;
+      if (event.payload.process_id !== state.processId) return;
+
+      console.log("[AI Review] Content event:", event.payload.event_type, "text length:", event.payload.text?.length ?? 0);
+
+      switch (event.payload.event_type) {
+        case "thinking_start":
+          console.log("[AI Review] Thinking started");
+          callbacks.onThinkingStart();
+          break;
+        case "thinking_delta":
+          state.fullOutput += event.payload.text;
+          callbacks.onThinkingDelta(event.payload.text);
+          break;
+        case "text_delta":
+          state.fullOutput += event.payload.text;
+          callbacks.onTextDelta(event.payload.text);
+          break;
+        case "block_stop":
+          console.log("[AI Review] Block stopped. Total output so far:", state.fullOutput.length);
+          callbacks.onBlockStop();
+          break;
+      }
+    });
+
+    // Start the process
     console.log("[AI Review] Invoking start_ai_stream...");
-    processId = await invoke<string>("start_ai_stream", {
+    const returnedId = await invoke<string>("start_ai_stream", {
       command,
       args: providerConfig.args,
       stdinInput: providerConfig.useStdin ? prompt : null,
+      processId,
     });
-    console.log("[AI Review] Process started with ID:", processId);
+    if (returnedId !== processId) {
+      console.warn("[AI Review] Process ID mismatch:", returnedId, processId);
+    }
+    console.log("[AI Review] Process started with ID:", returnedId);
+
   } catch (error) {
     console.error("[AI Review] Failed to start process:", error);
     cleanup();
@@ -184,9 +204,16 @@ export async function startStreamingAIReview(
     return async () => {};
   }
 
+  // Return cancel function
   return async () => {
-    if (processId) {
-      await invoke("cancel_ai_stream", { processId }).catch(() => {});
+    if (state.isCleanedUp) return;
+
+    if (state.processId) {
+      try {
+        await invoke("cancel_ai_stream", { processId: state.processId });
+      } catch {
+        // Ignore errors when cancelling (process might have already completed)
+      }
     }
     cleanup();
   };
@@ -349,13 +376,72 @@ export function createPendingReview(
   };
 }
 
-export async function checkProviderAvailability(provider: AIProvider): Promise<boolean> {
+export interface AIProviderStatus {
+  installed: boolean;
+  authenticated: boolean;
+  error?: string;
+}
+
+/**
+ * Check if an AI provider CLI is installed and ready to use
+ */
+export async function checkProviderStatus(provider: AIProvider): Promise<AIProviderStatus> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     const command = getProviderCommand(provider);
-    await invoke<string>("run_shell_command", { command: "which", args: [command] });
-    return true;
-  } catch {
-    return false;
+
+    // Check if installed
+    try {
+      await invoke<string>("run_shell_command", { command: "which", args: [command] });
+    } catch {
+      return {
+        installed: false,
+        authenticated: false,
+        error: `${command} CLI is not installed`,
+      };
+    }
+
+    // Check if authenticated by running a simple command
+    try {
+      if (provider === "claude") {
+        // Claude: try to get config or run a simple check
+        await invoke<string>("run_shell_command", {
+          command,
+          args: ["--version"],
+        });
+        // Claude doesn't have an easy auth check, assume authenticated if installed
+        return { installed: true, authenticated: true };
+      } else if (provider === "codex") {
+        // Codex: check version
+        await invoke<string>("run_shell_command", {
+          command,
+          args: ["--version"],
+        });
+        return { installed: true, authenticated: true };
+      }
+      return { installed: true, authenticated: true };
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      if (errorMsg.includes("not logged in") || errorMsg.includes("auth") || errorMsg.includes("API key")) {
+        return {
+          installed: true,
+          authenticated: false,
+          error: `${command} CLI is not authenticated. Please run "${command} auth" to authenticate.`,
+        };
+      }
+      // If version check fails, it might still work
+      return { installed: true, authenticated: true };
+    }
+  } catch (error) {
+    return {
+      installed: false,
+      authenticated: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
+}
+
+export async function checkProviderAvailability(provider: AIProvider): Promise<boolean> {
+  const status = await checkProviderStatus(provider);
+  return status.installed && status.authenticated;
 }

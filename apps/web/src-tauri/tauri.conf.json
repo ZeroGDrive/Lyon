@@ -12,11 +12,14 @@
   "app": {
     "windows": [
       {
-        "title": "lyon",
-        "width": 800,
-        "height": 600,
+        "title": "Lyon",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 700,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "center": true
       }
     ],
     "security": {
