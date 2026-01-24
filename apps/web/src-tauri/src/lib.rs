@@ -2,12 +2,19 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{async_runtime::spawn_blocking, AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex;
+
+#[derive(Clone, Deserialize)]
+struct TrayPRInfo {
+    number: i32,
+    title: String,
+    repo: String,
+}
 
 // Store process handle along with abort handles for cleanup
 struct ProcessHandle {
@@ -402,25 +409,78 @@ async fn set_tray_badge(count: Option<i32>, app: AppHandle) -> Result<(), String
     Ok(())
 }
 
+#[tauri::command]
+async fn update_tray_menu(prs: Vec<TrayPRInfo>, app: AppHandle) -> Result<(), String> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
+
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let mut menu_builder = MenuBuilder::new(&app);
+
+        let display_prs: Vec<_> = prs.iter().take(10).collect();
+        for pr in &display_prs {
+            let title = if pr.title.len() > 40 {
+                format!("#{} {}...", pr.number, &pr.title[..37])
+            } else {
+                format!("#{} {}", pr.number, pr.title)
+            };
+            let id = format!("pr-{}-{}", pr.repo.replace("/", "-"), pr.number);
+            let item = MenuItemBuilder::with_id(&id, &title)
+                .build(&app)
+                .map_err(|e| e.to_string())?;
+            menu_builder = menu_builder.item(&item);
+        }
+
+        if !display_prs.is_empty() {
+            menu_builder = menu_builder.separator();
+        }
+
+        let show_all = MenuItemBuilder::with_id("show-all", "Show All PRs...")
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        menu_builder = menu_builder.item(&show_all);
+
+        menu_builder = menu_builder.separator();
+
+        let refresh = MenuItemBuilder::with_id("refresh", "Refresh PRs")
+            .accelerator("CmdOrCtrl+R")
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        let settings = MenuItemBuilder::with_id("settings", "Settings...")
+            .accelerator("CmdOrCtrl+,")
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        menu_builder = menu_builder.item(&refresh).item(&settings);
+
+        menu_builder = menu_builder.separator();
+
+        let quit = PredefinedMenuItem::quit(&app, Some("Quit Lyon"))
+            .map_err(|e| e.to_string())?;
+        menu_builder = menu_builder.item(&quit);
+
+        let menu = menu_builder.build().map_err(|e| e.to_string())?;
+        tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    use tauri::menu::{MenuBuilder, MenuItemBuilder};
+    use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
     use tauri::tray::TrayIconBuilder;
 
-    let open_item = MenuItemBuilder::with_id("open", "Open Lyon").build(app)?;
+    let show_all = MenuItemBuilder::with_id("show-all", "Show All PRs...").build(app)?;
     let refresh_item = MenuItemBuilder::with_id("refresh", "Refresh PRs")
         .accelerator("CmdOrCtrl+R")
         .build(app)?;
     let settings_item = MenuItemBuilder::with_id("settings", "Settings...")
         .accelerator("CmdOrCtrl+,")
         .build(app)?;
-    let quit_item = MenuItemBuilder::with_id("quit", "Quit Lyon")
-        .accelerator("CmdOrCtrl+Q")
-        .build(app)?;
+    let quit_item = PredefinedMenuItem::quit(app, Some("Quit Lyon"))?;
 
     let menu = MenuBuilder::new(app)
-        .item(&open_item)
-        .item(&refresh_item)
+        .item(&show_all)
         .separator()
+        .item(&refresh_item)
         .item(&settings_item)
         .separator()
         .item(&quit_item)
@@ -431,18 +491,26 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .icon(tauri::include_image!("icons/tray-template@2x.png"))
         .menu(&menu)
         .show_menu_on_left_click(true)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "quit" => {
-                app.exit(0);
-            }
-            "open" | "settings" | "refresh" => {
+        .on_menu_event(|app, event| {
+            let event_id = event.id().as_ref();
+            if event_id.starts_with("pr-") {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.set_focus();
-                    let _: Result<(), _> = app.emit(&format!("menu-{}", event.id().as_ref()), ());
+                    let _: Result<(), _> = app.emit("tray-pr-click", event_id.to_string());
+                }
+            } else {
+                match event_id {
+                    "show-all" | "settings" | "refresh" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                            let _: Result<(), _> = app.emit(&format!("menu-{}", event_id), ());
+                        }
+                    }
+                    _ => {}
                 }
             }
-            _ => {}
         })
         .build(app)?;
 
@@ -542,7 +610,8 @@ pub fn run() {
             run_shell_command,
             start_ai_stream,
             cancel_ai_stream,
-            set_tray_badge
+            set_tray_badge,
+            update_tray_menu
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

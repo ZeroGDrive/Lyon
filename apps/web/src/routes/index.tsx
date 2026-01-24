@@ -86,6 +86,7 @@ import {
   startStreamingAIReview,
 } from "@/services/ai-review";
 import { usePRStore, useReviewStore } from "@/stores";
+import { useTrayMenu } from "@/hooks/use-tray";
 
 export const Route = createFileRoute("/")({
   component: HomeComponent,
@@ -777,6 +778,16 @@ function HomeComponent() {
   );
 
   const totalPRs = Array.from(pullRequests.values()).reduce((sum, prs) => sum + prs.length, 0);
+
+  const allPRs = useMemo(() => {
+    const prs: PullRequest[] = [];
+    for (const repoPRs of pullRequests.values()) {
+      prs.push(...repoPRs);
+    }
+    return prs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }, [pullRequests]);
+
+  useTrayMenu(allPRs);
 
   const prSearchTerm = prSearch.trim().toLowerCase();
   const hasActiveFilters =

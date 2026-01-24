@@ -1,3 +1,5 @@
+import type { PullRequest } from "@/types";
+
 import { useEffect } from "react";
 
 export function useTrayBadge(count: number) {
@@ -10,4 +12,21 @@ export function useTrayBadge(count: number) {
     }
     updateBadge();
   }, [count]);
+}
+
+export function useTrayMenu(prs: PullRequest[]) {
+  useEffect(() => {
+    async function updateMenu() {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const trayPrs = prs.slice(0, 10).map((pr) => ({
+          number: pr.number,
+          title: pr.title,
+          repo: pr.repository.fullName,
+        }));
+        await invoke("update_tray_menu", { prs: trayPrs });
+      } catch {}
+    }
+    updateMenu();
+  }, [prs]);
 }
