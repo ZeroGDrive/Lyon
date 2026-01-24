@@ -9,36 +9,47 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex;
 
-/// Get enhanced PATH for finding CLI tools like gh, git, etc.
+/// Get enhanced PATH for finding CLI tools like gh, claude, codex, etc.
 /// macOS GUI apps launched from Finder don't inherit shell PATH, so we need to add common paths.
 /// Windows GUI apps usually inherit PATH, but we add common locations as fallback.
 fn get_enhanced_path() -> String {
     let current_path = std::env::var("PATH").unwrap_or_default();
+    let home = std::env::var("HOME").unwrap_or_default();
 
     #[cfg(target_os = "macos")]
     {
-        // Common paths for Homebrew and other package managers on macOS
-        let additional_paths = [
-            "/opt/homebrew/bin",      // Apple Silicon Homebrew
-            "/usr/local/bin",         // Intel Homebrew / general
-            "/opt/homebrew/sbin",
-            "/usr/local/sbin",
-            "/usr/bin",
-            "/bin",
-            "/usr/sbin",
-            "/sbin",
-        ];
+        let mut paths: Vec<String> = Vec::new();
 
-        let mut paths: Vec<&str> = additional_paths.to_vec();
+        // User-specific paths (npm, cargo, bun, volta, claude, etc.)
+        if !home.is_empty() {
+            paths.push(format!("{}/.claude/bin", home));          // Claude Code CLI (native)
+            paths.push(format!("{}/.local/bin", home));           // pipx, user scripts, claude
+            paths.push(format!("{}/.npm-global/bin", home));      // npm global with prefix
+            paths.push(format!("{}/.volta/bin", home));           // Volta Node manager
+            paths.push(format!("{}/.cargo/bin", home));           // Rust cargo
+            paths.push(format!("{}/.bun/bin", home));             // Bun
+            paths.push(format!("{}/Library/pnpm", home));         // pnpm global
+            paths.push(format!("{}/Library/Application Support/fnm/bin", home)); // fnm
+        }
+
+        // System paths for Homebrew and standard locations
+        paths.push("/opt/homebrew/bin".to_string());      // Apple Silicon Homebrew
+        paths.push("/usr/local/bin".to_string());         // Intel Homebrew / general
+        paths.push("/opt/homebrew/sbin".to_string());
+        paths.push("/usr/local/sbin".to_string());
+        paths.push("/usr/bin".to_string());
+        paths.push("/bin".to_string());
+        paths.push("/usr/sbin".to_string());
+        paths.push("/sbin".to_string());
+
         if !current_path.is_empty() {
-            paths.push(&current_path);
+            paths.push(current_path);
         }
         paths.join(":")
     }
 
     #[cfg(target_os = "windows")]
     {
-        // Common paths for CLI tools on Windows
         let mut paths = vec![current_path.clone()];
 
         // GitHub CLI default install location
@@ -46,10 +57,19 @@ fn get_enhanced_path() -> String {
             paths.push(format!("{}\\GitHub CLI", program_files));
         }
 
-        // User-specific installs via scoop or other package managers
+        // User-specific installs
         if let Ok(user_profile) = std::env::var("USERPROFILE") {
+            paths.push(format!("{}\\.claude\\bin", user_profile));          // Claude Code CLI
             paths.push(format!("{}\\scoop\\shims", user_profile));
             paths.push(format!("{}\\AppData\\Local\\GitHub CLI", user_profile));
+            paths.push(format!("{}\\.cargo\\bin", user_profile));           // Rust cargo
+            paths.push(format!("{}\\.volta\\bin", user_profile));           // Volta
+            paths.push(format!("{}\\.bun\\bin", user_profile));             // Bun
+        }
+
+        // npm global packages
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            paths.push(format!("{}\\npm", appdata));
         }
 
         paths.join(";")
@@ -57,17 +77,26 @@ fn get_enhanced_path() -> String {
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        // Linux and others - add common paths
-        let additional_paths = [
-            "/usr/local/bin",
-            "/usr/bin",
-            "/bin",
-            "/snap/bin",  // Snap packages on Ubuntu
-        ];
+        let mut paths: Vec<String> = Vec::new();
 
-        let mut paths: Vec<&str> = additional_paths.to_vec();
+        // User-specific paths
+        if !home.is_empty() {
+            paths.push(format!("{}/.claude/bin", home));          // Claude Code CLI (native)
+            paths.push(format!("{}/.local/bin", home));           // pipx, user scripts, claude
+            paths.push(format!("{}/.npm-global/bin", home));      // npm global with prefix
+            paths.push(format!("{}/.volta/bin", home));           // Volta Node manager
+            paths.push(format!("{}/.cargo/bin", home));           // Rust cargo
+            paths.push(format!("{}/.bun/bin", home));             // Bun
+        }
+
+        // System paths
+        paths.push("/usr/local/bin".to_string());
+        paths.push("/usr/bin".to_string());
+        paths.push("/bin".to_string());
+        paths.push("/snap/bin".to_string());  // Snap packages on Ubuntu
+
         if !current_path.is_empty() {
-            paths.push(&current_path);
+            paths.push(current_path);
         }
         paths.join(":")
     }
