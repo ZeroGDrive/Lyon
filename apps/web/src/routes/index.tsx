@@ -200,6 +200,7 @@ function HomeComponent() {
     checkSetup();
   }, []);
 
+
   const fetchPRs = useCallback(async () => {
     if (watchedRepos.length === 0) {
       setPullRequests(new Map());
@@ -240,6 +241,44 @@ function HomeComponent() {
 
   useEffect(() => {
     fetchPRs();
+  }, [fetchPRs]);
+
+  // Listen for tray menu events
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const setupListeners = async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+
+      const unlistenSettings = await listen("menu-settings", () => {
+        setShowSettings(true);
+      });
+
+      const unlistenPreferences = await listen("menu-preferences", () => {
+        setShowSettings(true);
+      });
+
+      const unlistenRefresh = await listen("menu-refresh", () => {
+        fetchPRs();
+      });
+
+      const unlistenRefreshPRs = await listen("menu-refresh-prs", () => {
+        fetchPRs();
+      });
+
+      unlisten = () => {
+        unlistenSettings();
+        unlistenPreferences();
+        unlistenRefresh();
+        unlistenRefreshPRs();
+      };
+    };
+
+    setupListeners();
+
+    return () => {
+      unlisten?.();
+    };
   }, [fetchPRs]);
 
   const fetchUserRepos = useCallback(async () => {
