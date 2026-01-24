@@ -1,52 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <!-- Main gradient - blue to purple -->
-    <linearGradient id="mainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#6366f1"/>
-      <stop offset="50%" style="stop-color:#8b5cf6"/>
-      <stop offset="100%" style="stop-color:#a855f7"/>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
     </linearGradient>
-    <!-- Accent gradient -->
-    <linearGradient id="accentGradient" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#3b82f6"/>
-      <stop offset="100%" style="stop-color:#6366f1"/>
-    </linearGradient>
-    <!-- Glow effect -->
-    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
-      <feMerge>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-    <!-- Shadow -->
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.3"/>
-    </filter>
   </defs>
-
-  <!-- Background circle -->
-  <circle cx="256" cy="256" r="240" fill="url(#mainGradient)" filter="url(#shadow)"/>
-
-  <!-- Inner circle for depth -->
-  <circle cx="256" cy="256" r="200" fill="rgba(0,0,0,0.15)"/>
-
-  <!-- Stylized Lion head / L shape combined with git branch -->
-  <g transform="translate(256, 256)" filter="url(#glow)">
-    <!-- Main L shape (Lyon) -->
-    <path d="M-80,-90 L-80,70 L70,70 L70,40 L-45,40 L-45,-90 Z"
-          fill="white" opacity="0.95"/>
-
-    <!-- Git merge/PR symbol integrated -->
-    <circle cx="50" cy="-50" r="20" fill="none" stroke="white" stroke-width="8" opacity="0.9"/>
-    <circle cx="50" cy="30" r="12" fill="white" opacity="0.9"/>
-    <line x1="50" y1="-30" x2="50" y2="18" stroke="white" stroke-width="8" opacity="0.9"/>
-
-    <!-- Checkmark for code review approval -->
-    <path d="M30,-55 L45,-40 L75,-75"
-          fill="none" stroke="#4ade80" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-  </g>
-
-  <!-- Subtle ring -->
-  <circle cx="256" cy="256" r="220" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="2"/>
+  <circle cx="256" cy="256" r="240" fill="url(#g)"/>
+  <path d="M144 128v256h176v-64H224V128z" fill="#ffffff"/>
+  <circle cx="352" cy="176" r="32" fill="none" stroke="#ffffff" stroke-width="24"/>
+  <circle cx="352" cy="304" r="24" fill="#ffffff"/>
+  <line x1="352" y1="208" x2="352" y2="280" stroke="#ffffff" stroke-width="24"/>
+  <path d="M288 192l32 32 64-64" fill="none" stroke="#22c55e" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
