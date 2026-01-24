@@ -8,6 +8,11 @@
     "shell:allow-spawn",
     "shell:allow-execute",
     "shell:allow-open",
+    "notification:default",
+    "deep-link:default",
+    "process:default",
+    "updater:default",
+    "global-shortcut:default",
     {
       "identifier": "shell:allow-execute",
       "allow": [

@@ -1,5 +1,7 @@
 import type { AIProvider, AIReviewConfig, AIReviewResult, ReviewStatus } from "@/types";
 
+import { logError } from "@/stores/error-log-store";
+
 interface StreamCallbacks {
   onThinkingStart: () => void;
   onThinkingDelta: (text: string) => void;
@@ -155,12 +157,14 @@ export async function startStreamingAIReview(
           break;
         }
         case "error": {
-          console.error("[AI Review] Process error:", event.payload.data);
           const errorMsg = state.stderrOutput.trim()
             ? `${event.payload.data}\n\nStderr:\n${state.stderrOutput.trim()}`
             : state.fullOutput.trim()
               ? `${event.payload.data}\n\nOutput:\n${state.fullOutput.trim()}`
               : event.payload.data;
+          logError(config.provider === "claude" ? "ai-claude" : "ai-codex", command, errorMsg, {
+            stderr: state.stderrOutput,
+          });
           cleanup();
           callbacks.onError(errorMsg);
           break;
@@ -218,9 +222,10 @@ export async function startStreamingAIReview(
     }
     console.log("[AI Review] Process started with ID:", returnedId);
   } catch (error) {
-    console.error("[AI Review] Failed to start process:", error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    logError(config.provider === "claude" ? "ai-claude" : "ai-codex", command, errorMsg);
     cleanup();
-    callbacks.onError(error instanceof Error ? error.message : String(error));
+    callbacks.onError(errorMsg);
     return async () => {};
   }
 

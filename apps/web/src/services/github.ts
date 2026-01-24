@@ -1,5 +1,7 @@
 import type { Branch, Comment, Commit, PullRequest, Repository } from "@/types";
 
+import { logError } from "@/stores/error-log-store";
+
 interface CommandResult<T> {
   success: boolean;
   data?: T;
@@ -67,10 +69,9 @@ async function runGhCommand<T>(args: string[]): Promise<CommandResult<T>> {
     const result = await invoke<string>("run_gh_command", { args });
     return { success: true, data: JSON.parse(result) as T };
   } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    logError("gh", "gh", errorMsg, { args });
+    return { success: false, error: errorMsg };
   }
 }
 
@@ -80,24 +81,21 @@ async function runGhCommandRaw(args: string[]): Promise<CommandResult<string>> {
     const result = await invoke<string>("run_gh_command", { args });
     return { success: true, data: result };
   } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    logError("gh", "gh", errorMsg, { args });
+    return { success: false, error: errorMsg };
   }
 }
 
-// For commands that don't return meaningful output (merge, close, approve, etc.)
 async function runGhCommandVoid(args: string[]): Promise<CommandResult<void>> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke<string>("run_gh_command", { args });
     return { success: true };
   } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    logError("gh", "gh", errorMsg, { args });
+    return { success: false, error: errorMsg };
   }
 }
 
@@ -567,16 +565,12 @@ export async function addPullRequestComment(
 async function runGhCommandWithInput<T>(args: string[], input: string): Promise<CommandResult<T>> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    console.log("Running gh command with input:", args, input);
     const result = await invoke<string>("run_gh_command_with_input", { args, input });
     return { success: true, data: JSON.parse(result) as T };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error("gh command failed:", errorMsg);
-    return {
-      success: false,
-      error: errorMsg,
-    };
+    logError("gh", "gh graphql", errorMsg, { args });
+    return { success: false, error: errorMsg };
   }
 }
 

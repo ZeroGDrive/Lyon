@@ -17,14 +17,9 @@ const sizeClasses = {
 
 /**
  * Hardware-accelerated spinner component.
- * Animation is applied to wrapper div for GPU acceleration.
  */
 function Spinner({ className, size = "md" }: SpinnerProps) {
-  return (
-    <div className={cn("animate-spin", className)}>
-      <Loader2 className={sizeClasses[size]} />
-    </div>
-  );
+  return <Loader2 className={cn("animate-spin", sizeClasses[size], className)} />;
 }
 
 export { Spinner };

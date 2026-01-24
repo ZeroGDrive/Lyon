@@ -221,10 +221,7 @@ function DiffFileSidebar({
         </h3>
       </div>
       <div ref={scrollRef} className="flex-1 overflow-auto">
-        <div
-          className="relative min-w-max"
-          style={{ height: virtualizer.getTotalSize() }}
-        >
+        <div className="relative min-w-max" style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const row = flatRows[virtualRow.index];
             if (!row) return null;

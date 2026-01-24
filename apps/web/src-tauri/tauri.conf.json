@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "lyon",
+  "productName": "Lyon",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.lyon.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:3001",
@@ -24,6 +24,10 @@
     ],
     "security": {
       "csp": null
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true
     }
   },
   "bundle": {
@@ -35,6 +39,18 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["lyon"]
+      }
+    },
+    "updater": {
+      "endpoints": ["https://github.com/YOUR_ORG/lyon/releases/latest/download/latest.json"],
+      "pubkey": ""
+    }
   }
 }

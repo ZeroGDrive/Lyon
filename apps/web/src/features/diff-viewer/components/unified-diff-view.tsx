@@ -1,4 +1,11 @@
-import type { CommentsByLine, DiffHunk, DiffLine, DiffStatus, FileDiff, LineComment } from "@/types";
+import type {
+  CommentsByLine,
+  DiffHunk,
+  DiffLine,
+  DiffStatus,
+  FileDiff,
+  LineComment,
+} from "@/types";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
@@ -48,7 +55,13 @@ interface AlignedLine {
 
 type DiffRow =
   | { type: "file-header"; fileIndex: number; file: FileDiff }
-  | { type: "diff-line"; fileIndex: number; lineIndex: number; aligned: AlignedLine; file: FileDiff };
+  | {
+      type: "diff-line";
+      fileIndex: number;
+      lineIndex: number;
+      aligned: AlignedLine;
+      file: FileDiff;
+    };
 
 // ============================================================================
 // Constants
@@ -153,10 +166,7 @@ interface BuildRowsResult {
   alignedLinesCache: Map<number, AlignedLine[]>;
 }
 
-function buildRows(
-  files: FileDiff[],
-  expandedFiles: Set<string>,
-): BuildRowsResult {
+function buildRows(files: FileDiff[], expandedFiles: Set<string>): BuildRowsResult {
   const rows: DiffRow[] = [];
   const fileIndexMap = new Map<string, number>();
   const lineIndexMap = new Map<string, number>();
@@ -568,8 +578,17 @@ interface DiffLineRowProps {
   file: FileDiff;
   lineIndex: number;
   highlightedTokens: Map<string, HighlightedToken[]>;
-  getCommentsForLine: (filePath: string, lineNumber: number, side: "LEFT" | "RIGHT") => LineComment[];
-  handleAddComment: (filePath: string, lineNumber: number, side: "LEFT" | "RIGHT", body: string) => void;
+  getCommentsForLine: (
+    filePath: string,
+    lineNumber: number,
+    side: "LEFT" | "RIGHT",
+  ) => LineComment[];
+  handleAddComment: (
+    filePath: string,
+    lineNumber: number,
+    side: "LEFT" | "RIGHT",
+    body: string,
+  ) => void;
   searchQuery?: string;
   currentUser?: string | null;
   onAddComment?: (

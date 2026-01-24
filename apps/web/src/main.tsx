@@ -1,8 +1,10 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import ReactDOM from "react-dom/client";
 
 import Loader from "./components/loader";
+import { persistOptions } from "./lib/query-persister";
 import { routeTree } from "./routeTree.gen";
 
 const queryClient = new QueryClient({
@@ -38,8 +40,8 @@ if (!rootElement) {
 if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement);
   root.render(
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
       <RouterProvider router={router} />
-    </QueryClientProvider>,
+    </PersistQueryClientProvider>,
   );
 }

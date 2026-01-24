@@ -10,6 +10,8 @@ import FilePlus from "lucide-react/dist/esm/icons/file-plus";
 import Files from "lucide-react/dist/esm/icons/files";
 import LayoutGrid from "lucide-react/dist/esm/icons/layout-grid";
 import List from "lucide-react/dist/esm/icons/list";
+import Maximize2 from "lucide-react/dist/esm/icons/maximize-2";
+import Minimize2 from "lucide-react/dist/esm/icons/minimize-2";
 import Search from "lucide-react/dist/esm/icons/search";
 import X from "lucide-react/dist/esm/icons/x";
 
@@ -78,6 +80,7 @@ function DiffViewer({
   const [internalSelectedFile, setInternalSelectedFile] = useState<string | null>(
     files.length > 0 ? (files[0]?.path ?? null) : null,
   );
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const selectedFilePath = controlledSelectedFile ?? internalSelectedFile;
   const setSelectedFilePath = onSelectFile ?? setInternalSelectedFile;
@@ -131,6 +134,16 @@ function DiffViewer({
       setSearchTarget(null);
     }
   }, [scrollToLine, scrollToFile]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isFullscreen]);
 
   const jumpToMatch = useCallback(
     (index: number) => {
@@ -236,67 +249,82 @@ function DiffViewer({
 
   return (
     <div data-slot="diff-viewer" className={cn("flex flex-col gap-4", className)}>
-      <DiffHeader
-        stats={stats}
-        viewMode={viewMode}
-        onViewModeChange={handleViewModeChange}
+      {isFullscreen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+          onClick={() => setIsFullscreen(false)}
+        />
+      )}
+      <div className={cn("flex flex-col gap-4", isFullscreen && "fixed inset-4 z-50")}>
+        <DiffHeader
+          stats={stats}
+          viewMode={viewMode}
+          onViewModeChange={handleViewModeChange}
           isViewModePending={isViewModePending}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        searchMatches={searchMatches}
-        searchIndex={searchIndex}
-        onJumpToMatch={jumpToMatch}
-        onClearSearch={() => setSearchQuery("")}
-      />
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          searchMatches={searchMatches}
+          searchIndex={searchIndex}
+          onJumpToMatch={jumpToMatch}
+          onClearSearch={() => setSearchQuery("")}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
+        />
 
-      <div className="glass-subtle flex h-[600px] overflow-hidden rounded-xl">
-        {viewMode === "split" ? (
-          <>
-            <DiffFileSidebar
+        <div
+          className={cn(
+            "glass-subtle flex overflow-hidden rounded-xl",
+            isFullscreen ? "flex-1" : "h-[600px]",
+          )}
+        >
+          {viewMode === "split" ? (
+            <>
+              <DiffFileSidebar
+                files={files}
+                selectedFile={selectedFilePath}
+                onSelectFile={setSelectedFilePath}
+                commentsByLine={commentsByLine}
+              />
+
+              <div className="flex-1 overflow-hidden">
+                {selectedFile ? (
+                  <VirtualizedDiff
+                    file={selectedFile}
+                    commentsByLine={commentsByLine}
+                    onAddComment={onAddComment}
+                    scrollToLine={effectiveScrollToLine}
+                    searchQuery={normalizedQuery}
+                    currentUser={currentUser}
+                    onReplyComment={onReplyComment}
+                    onEditComment={onEditComment}
+                    onDeleteComment={onDeleteComment}
+                    onResolveThread={onResolveThread}
+                    onUnresolveThread={onUnresolveThread}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    Select a file to view changes
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <UnifiedDiffView
               files={files}
-              selectedFile={selectedFilePath}
-              onSelectFile={setSelectedFilePath}
+              scrollToFile={effectiveScrollToFile}
+              scrollToLine={effectiveScrollToLine}
               commentsByLine={commentsByLine}
+              onAddComment={onAddComment}
+              searchQuery={normalizedQuery}
+              currentUser={currentUser}
+              onReplyComment={onReplyComment}
+              onEditComment={onEditComment}
+              onDeleteComment={onDeleteComment}
+              onResolveThread={onResolveThread}
+              onUnresolveThread={onUnresolveThread}
             />
-
-            <div className="flex-1 overflow-hidden">
-              {selectedFile ? (
-                <VirtualizedDiff
-                  file={selectedFile}
-                  commentsByLine={commentsByLine}
-                  onAddComment={onAddComment}
-                  scrollToLine={effectiveScrollToLine}
-                  searchQuery={normalizedQuery}
-                  currentUser={currentUser}
-                  onReplyComment={onReplyComment}
-                  onEditComment={onEditComment}
-                  onDeleteComment={onDeleteComment}
-                  onResolveThread={onResolveThread}
-                  onUnresolveThread={onUnresolveThread}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  Select a file to view changes
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <UnifiedDiffView
-            files={files}
-            scrollToFile={effectiveScrollToFile}
-            scrollToLine={effectiveScrollToLine}
-            commentsByLine={commentsByLine}
-            onAddComment={onAddComment}
-            searchQuery={normalizedQuery}
-            currentUser={currentUser}
-            onReplyComment={onReplyComment}
-            onEditComment={onEditComment}
-            onDeleteComment={onDeleteComment}
-            onResolveThread={onResolveThread}
-            onUnresolveThread={onUnresolveThread}
-          />
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
@@ -315,6 +343,8 @@ interface DiffHeaderProps {
   searchIndex?: number;
   onJumpToMatch?: (index: number) => void;
   onClearSearch?: () => void;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 }
 
 function DiffHeader({
@@ -330,6 +360,8 @@ function DiffHeader({
   searchIndex,
   onJumpToMatch,
   onClearSearch,
+  isFullscreen,
+  onToggleFullscreen,
 }: DiffHeaderProps) {
   const matchCount = searchMatches?.length ?? 0;
   const activeMatch = matchCount > 0 ? (searchIndex ?? 0) + 1 : 0;
@@ -438,6 +470,16 @@ function DiffHeader({
               )}
             </button>
           </div>
+        )}
+        {onToggleFullscreen && (
+          <button
+            type="button"
+            onClick={onToggleFullscreen}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-background/50 hover:text-foreground"
+            title={isFullscreen ? "Exit fullscreen (Esc)" : "Fullscreen (Esc to exit)"}
+          >
+            {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+          </button>
         )}
         <span className="flex items-center gap-1.5 text-muted-foreground">
           <Files className="size-3.5" />

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use serde_json::Value;
-use tauri::{async_runtime::spawn_blocking, AppHandle, Emitter, State};
+use tauri::{async_runtime::spawn_blocking, AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex;
@@ -287,7 +287,7 @@ async fn start_ai_stream(
     let complete_app = app;
     let processes_for_cleanup = processes;
     let completion_task = tokio::spawn(async move {
-        let mut cancel_rx = cancel_rx;
+        let cancel_rx = cancel_rx;
         let exit_status = tokio::select! {
             status = child.wait() => Some(status),
             _ = cancel_rx => {
@@ -386,26 +386,203 @@ async fn cancel_ai_stream(
     }
 }
 
+#[tauri::command]
+async fn set_tray_badge(count: Option<i32>, app: AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(tray) = app.tray_by_id("main-tray") {
+            let title = match count {
+                Some(c) if c > 0 => Some(c.to_string()),
+                _ => None,
+            };
+            tray.set_title(title.as_deref())
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let open_item = MenuItemBuilder::with_id("open", "Open Lyon").build(app)?;
+    let refresh_item = MenuItemBuilder::with_id("refresh", "Refresh PRs")
+        .accelerator("CmdOrCtrl+R")
+        .build(app)?;
+    let settings_item = MenuItemBuilder::with_id("settings", "Settings...")
+        .accelerator("CmdOrCtrl+,")
+        .build(app)?;
+    let quit_item = MenuItemBuilder::with_id("quit", "Quit Lyon")
+        .accelerator("CmdOrCtrl+Q")
+        .build(app)?;
+
+    let menu = MenuBuilder::new(app)
+        .item(&open_item)
+        .item(&refresh_item)
+        .separator()
+        .item(&settings_item)
+        .separator()
+        .item(&quit_item)
+        .build()?;
+
+    let _tray = TrayIconBuilder::with_id("main-tray")
+        .tooltip("Lyon - PR Review")
+        .icon(app.default_window_icon().unwrap().clone())
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "quit" => {
+                app.exit(0);
+            }
+            "open" | "settings" | "refresh" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                    let _: Result<(), _> = app.emit(&format!("menu-{}", event.id().as_ref()), ());
+                }
+            }
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        })
+        .build(app)?;
+
+    Ok(())
+}
+
+fn setup_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+
+    let app_menu = SubmenuBuilder::new(app, "Lyon")
+        .about(None)
+        .separator()
+        .item(
+            &MenuItemBuilder::with_id("preferences", "Preferences...")
+                .accelerator("CmdOrCtrl+,")
+                .build(app)?,
+        )
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()?;
+
+    let file_menu = SubmenuBuilder::new(app, "File")
+        .item(
+            &MenuItemBuilder::with_id("new-repo", "Add Repository...")
+                .accelerator("CmdOrCtrl+N")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("refresh-prs", "Refresh")
+                .accelerator("CmdOrCtrl+R")
+                .build(app)?,
+        )
+        .separator()
+        .close_window()
+        .build()?;
+
+    let edit_menu = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+
+    let view_menu = SubmenuBuilder::new(app, "View")
+        .item(
+            &MenuItemBuilder::with_id("toggle-fullscreen-diff", "Toggle Fullscreen Diff")
+                .accelerator("CmdOrCtrl+Shift+F")
+                .build(app)?,
+        )
+        .separator()
+        .fullscreen()
+        .build()?;
+
+    let window_menu = SubmenuBuilder::new(app, "Window")
+        .minimize()
+        .separator()
+        .close_window()
+        .build()?;
+
+    let menu = MenuBuilder::new(app)
+        .item(&app_menu)
+        .item(&file_menu)
+        .item(&edit_menu)
+        .item(&view_menu)
+        .item(&window_menu)
+        .build()?;
+
+    app.set_menu(menu)?;
+
+    app.on_menu_event(|app, event| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _: Result<(), _> = window.emit(&format!("menu-{}", event.id().as_ref()), ());
+        }
+    });
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_process::init())
         .manage(AIProcessState::default())
         .invoke_handler(tauri::generate_handler![
             run_gh_command,
             run_gh_command_with_input,
             run_shell_command,
             start_ai_stream,
-            cancel_ai_stream
+            cancel_ai_stream,
+            set_tray_badge
         ])
         .setup(|app| {
-            if cfg!(debug_assertions) {
+            #[cfg(debug_assertions)]
+            {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
             }
+
+            #[cfg(desktop)]
+            {
+                app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+                app.handle().plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
+            }
+
+            setup_tray(app)?;
+            setup_app_menu(app)?;
+
+            #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let _ = app.deep_link().register_all();
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())
