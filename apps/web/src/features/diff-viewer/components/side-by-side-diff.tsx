@@ -275,7 +275,7 @@ function SideBySideDiff({
               return (
                 <div
                   key={`left-${virtualRow.key}`}
-                  className="absolute inset-x-0"
+                  className="absolute left-0 min-w-full"
                   style={{
                     top: 0,
                     height: virtualRow.size,
@@ -318,7 +318,7 @@ function SideBySideDiff({
               return (
                 <div
                   key={`right-${virtualRow.key}`}
-                  className="absolute inset-x-0"
+                  className="absolute left-0 min-w-full"
                   style={{
                     top: 0,
                     height: virtualRow.size,

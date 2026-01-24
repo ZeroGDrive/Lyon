@@ -69,6 +69,8 @@ type DiffRow =
 
 const LINE_HEIGHT = 24;
 const FILE_HEADER_HEIGHT = 56;
+const PANEL_PREFIX_CHARS = 1;
+const PANEL_EXTRA_REM = 5;
 
 const statusIcons: Record<DiffStatus, React.ElementType> = {
   added: FilePlus2,
@@ -238,6 +240,37 @@ function UnifiedDiffView({
     () => buildRows(files, expandedFiles),
     [files, expandedFiles],
   );
+  const { leftPanelMinWidth, rightPanelMinWidth } = useMemo(() => {
+    let leftMax = 0;
+    let rightMax = 0;
+
+    alignedLinesCache.forEach((alignedLines) => {
+      alignedLines.forEach((aligned) => {
+        if (aligned.isHunkHeader) {
+          const headerLength = aligned.hunkHeader?.length ?? 0;
+          leftMax = Math.max(leftMax, headerLength);
+          rightMax = Math.max(rightMax, headerLength);
+          return;
+        }
+        if (aligned.left) {
+          leftMax = Math.max(leftMax, aligned.left.content.length);
+        }
+        if (aligned.right) {
+          rightMax = Math.max(rightMax, aligned.right.content.length);
+        }
+      });
+    });
+
+    const makeWidth = (maxChars: number) => {
+      if (maxChars <= 0) return "100%";
+      return `max(100%, ${maxChars + PANEL_PREFIX_CHARS}ch + ${PANEL_EXTRA_REM}rem)`;
+    };
+
+    return {
+      leftPanelMinWidth: makeWidth(leftMax),
+      rightPanelMinWidth: makeWidth(rightMax),
+    };
+  }, [alignedLinesCache]);
 
   const dynamicOverscan = rows.length > 500 ? 10 : 30;
 
@@ -400,6 +433,7 @@ function UnifiedDiffView({
 
   const allExpanded = expandedFiles.size === files.length;
   const noneExpanded = expandedFiles.size === 0;
+  const virtualRows = virtualizer.getVirtualItems();
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -439,57 +473,126 @@ function UnifiedDiffView({
       </div>
 
       <div ref={parentRef} className="flex-1 overflow-y-auto">
-        <div
-          style={{
-            height: virtualizer.getTotalSize(),
-            width: "100%",
-            position: "relative",
-          }}
-        >
-          {virtualizer.getVirtualItems().map((virtualRow) => {
-            const row = rows[virtualRow.index];
-            if (!row) return null;
+        <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
+          <div className="pointer-events-none absolute inset-0 z-20">
+            {virtualRows.map((virtualRow) => {
+              const row = rows[virtualRow.index];
+              if (!row || row.type !== "file-header") return null;
 
-            return (
-              <div
-                key={virtualRow.key}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: virtualRow.size,
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-              >
-                {row.type === "file-header" ? (
+              return (
+                <div
+                  key={`${virtualRow.key}-header`}
+                  className="pointer-events-auto absolute left-0 right-0"
+                  style={{
+                    top: 0,
+                    height: virtualRow.size,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
                   <FileHeaderRow
                     file={row.file}
                     isExpanded={expandedFiles.has(row.file.path)}
                     onToggle={toggleFile}
                     commentsByLine={commentsByLine}
                   />
-                ) : (
-                  <DiffLineRow
-                    aligned={row.aligned}
-                    file={row.file}
-                    lineIndex={row.lineIndex}
-                    highlightedTokens={highlightedTokens}
-                    getCommentsForLine={getCommentsForLine}
-                    handleAddComment={handleAddComment}
-                    searchQuery={searchQuery}
-                    currentUser={currentUser}
-                    onAddComment={onAddComment}
-                    onReplyComment={onReplyComment}
-                    onEditComment={onEditComment}
-                    onDeleteComment={onDeleteComment}
-                    onResolveThread={onResolveThread}
-                    onUnresolveThread={onUnresolveThread}
-                  />
-                )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex h-full">
+            {/* Left panel - independent horizontal scroll */}
+            <div className="w-1/2 overflow-x-auto overflow-y-hidden">
+              <div
+                className="relative w-max min-w-full"
+                style={{ height: virtualizer.getTotalSize(), minWidth: leftPanelMinWidth }}
+              >
+                {virtualRows.map((virtualRow) => {
+                  const row = rows[virtualRow.index];
+                  if (!row) return null;
+
+                  return (
+                    <div
+                      key={virtualRow.key}
+                      className="min-w-full"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        height: virtualRow.size,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    >
+                      {row.type === "file-header" ? null : (
+                        <LeftPanelRow
+                          aligned={row.aligned}
+                          file={row.file}
+                          lineIndex={row.lineIndex}
+                          highlightedTokens={highlightedTokens}
+                          getCommentsForLine={getCommentsForLine}
+                          handleAddComment={handleAddComment}
+                          searchQuery={searchQuery}
+                          currentUser={currentUser}
+                          onAddComment={onAddComment}
+                          onReplyComment={onReplyComment}
+                          onEditComment={onEditComment}
+                          onDeleteComment={onDeleteComment}
+                          onResolveThread={onResolveThread}
+                          onUnresolveThread={onUnresolveThread}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </div>
+
+            {/* Right panel - independent horizontal scroll */}
+            <div className="w-1/2 overflow-x-auto overflow-y-hidden">
+              <div
+                className="relative w-max min-w-full"
+                style={{ height: virtualizer.getTotalSize(), minWidth: rightPanelMinWidth }}
+              >
+                {virtualRows.map((virtualRow) => {
+                  const row = rows[virtualRow.index];
+                  if (!row) return null;
+
+                  return (
+                    <div
+                      key={`${virtualRow.key}-right`}
+                      className="min-w-full"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        height: virtualRow.size,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    >
+                      {row.type === "file-header" ? null : (
+                        <RightPanelRow
+                          aligned={row.aligned}
+                          file={row.file}
+                          lineIndex={row.lineIndex}
+                          highlightedTokens={highlightedTokens}
+                          getCommentsForLine={getCommentsForLine}
+                          handleAddComment={handleAddComment}
+                          searchQuery={searchQuery}
+                          currentUser={currentUser}
+                          onAddComment={onAddComment}
+                          onReplyComment={onReplyComment}
+                          onEditComment={onEditComment}
+                          onDeleteComment={onDeleteComment}
+                          onResolveThread={onResolveThread}
+                          onUnresolveThread={onUnresolveThread}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -604,7 +707,7 @@ interface DiffLineRowProps {
   onUnresolveThread?: (threadId: string) => void | Promise<void>;
 }
 
-const DiffLineRow = memo(function DiffLineRow({
+const LeftPanelRow = memo(function LeftPanelRow({
   aligned,
   file,
   lineIndex,
@@ -621,60 +724,78 @@ const DiffLineRow = memo(function DiffLineRow({
   onUnresolveThread,
 }: DiffLineRowProps) {
   const leftTokens = highlightedTokens.get(`${file.path}:left-${lineIndex}`);
+
+  return (
+    <div className="bg-background/30" style={{ height: LINE_HEIGHT }}>
+      <LeftLine
+        aligned={aligned}
+        tokens={leftTokens}
+        comments={
+          aligned.left?.oldLineNumber
+            ? getCommentsForLine(file.path, aligned.left.oldLineNumber, "LEFT")
+            : []
+        }
+        onAddComment={
+          onAddComment && aligned.left?.oldLineNumber
+            ? (body) => handleAddComment(file.path, aligned.left!.oldLineNumber!, "LEFT", body)
+            : undefined
+        }
+        searchQuery={searchQuery}
+        currentUser={currentUser}
+        onReplyComment={onReplyComment}
+        onEditComment={onEditComment}
+        onDeleteComment={onDeleteComment}
+        onResolveThread={onResolveThread}
+        onUnresolveThread={onUnresolveThread}
+      />
+    </div>
+  );
+});
+
+const RightPanelRow = memo(function RightPanelRow({
+  aligned,
+  file,
+  lineIndex,
+  highlightedTokens,
+  getCommentsForLine,
+  handleAddComment,
+  searchQuery,
+  currentUser,
+  onAddComment,
+  onReplyComment,
+  onEditComment,
+  onDeleteComment,
+  onResolveThread,
+  onUnresolveThread,
+}: DiffLineRowProps) {
   const rightTokens =
     aligned.left === aligned.right
-      ? leftTokens
+      ? highlightedTokens.get(`${file.path}:left-${lineIndex}`)
       : highlightedTokens.get(`${file.path}:right-${lineIndex}`);
 
   return (
-    <div className="flex bg-background/30" style={{ height: LINE_HEIGHT }}>
-      <div className="w-1/2 min-w-0 overflow-hidden border-r border-glass-border">
-        <LeftLine
-          aligned={aligned}
-          tokens={leftTokens}
-          comments={
-            aligned.left?.oldLineNumber
-              ? getCommentsForLine(file.path, aligned.left.oldLineNumber, "LEFT")
-              : []
-          }
-          onAddComment={
-            onAddComment && aligned.left?.oldLineNumber
-              ? (body) => handleAddComment(file.path, aligned.left!.oldLineNumber!, "LEFT", body)
-              : undefined
-          }
-          searchQuery={searchQuery}
-          currentUser={currentUser}
-          onReplyComment={onReplyComment}
-          onEditComment={onEditComment}
-          onDeleteComment={onDeleteComment}
-          onResolveThread={onResolveThread}
-          onUnresolveThread={onUnresolveThread}
-        />
-      </div>
-
-      <div className="w-1/2 min-w-0 overflow-hidden">
-        <RightLine
-          aligned={aligned}
-          tokens={rightTokens}
-          comments={
-            aligned.right?.newLineNumber
-              ? getCommentsForLine(file.path, aligned.right.newLineNumber, "RIGHT")
-              : []
-          }
-          onAddComment={
-            onAddComment && aligned.right?.newLineNumber
-              ? (body) => handleAddComment(file.path, aligned.right!.newLineNumber!, "RIGHT", body)
-              : undefined
-          }
-          searchQuery={searchQuery}
-          currentUser={currentUser}
-          onReplyComment={onReplyComment}
-          onEditComment={onEditComment}
-          onDeleteComment={onDeleteComment}
-          onResolveThread={onResolveThread}
-          onUnresolveThread={onUnresolveThread}
-        />
-      </div>
+    <div className="bg-background/30" style={{ height: LINE_HEIGHT }}>
+      <RightLine
+        aligned={aligned}
+        tokens={rightTokens}
+        comments={
+          aligned.right?.newLineNumber
+            ? getCommentsForLine(file.path, aligned.right.newLineNumber, "RIGHT")
+            : []
+        }
+        onAddComment={
+          onAddComment && aligned.right?.newLineNumber
+            ? (body) => handleAddComment(file.path, aligned.right!.newLineNumber!, "RIGHT", body)
+            : undefined
+        }
+        searchQuery={searchQuery}
+        currentUser={currentUser}
+        onReplyComment={onReplyComment}
+        onEditComment={onEditComment}
+        onDeleteComment={onDeleteComment}
+        onResolveThread={onResolveThread}
+        onUnresolveThread={onUnresolveThread}
+      />
     </div>
   );
 });
@@ -710,7 +831,7 @@ const LeftLine = memo(function LeftLine({
 }) {
   if (aligned.isHunkHeader) {
     return (
-      <div className="flex h-6 items-center bg-muted/80 px-4 font-mono text-xs text-muted-foreground">
+      <div className="flex h-6 w-max min-w-full items-center bg-muted/80 px-4 font-mono text-xs text-muted-foreground">
         <span className="text-primary/60">@@</span>
         <span className="mx-2">{aligned.hunkHeader}</span>
         <span className="text-primary/60">@@</span>
@@ -721,7 +842,7 @@ const LeftLine = memo(function LeftLine({
   const line = aligned.left;
 
   if (!line) {
-    return <div className="h-6 bg-muted/20" />;
+    return <div className="h-6 w-max min-w-full bg-muted/20" />;
   }
 
   const isDeletion = line.type === "deletion";
@@ -733,7 +854,7 @@ const LeftLine = memo(function LeftLine({
   return (
     <div
       className={cn(
-        "flex h-6 font-mono text-xs",
+        "flex h-6 w-max min-w-full font-mono text-xs",
         isDeletion && "bg-red-500/10",
         matchesQuery && "bg-amber-500/15",
       )}
@@ -798,7 +919,7 @@ const RightLine = memo(function RightLine({
 }) {
   if (aligned.isHunkHeader) {
     return (
-      <div className="flex h-6 items-center bg-muted/80 px-4 font-mono text-xs text-muted-foreground">
+      <div className="flex h-6 w-max min-w-full items-center bg-muted/80 px-4 font-mono text-xs text-muted-foreground">
         <span className="text-primary/60">@@</span>
         <span className="mx-2">{aligned.hunkHeader}</span>
         <span className="text-primary/60">@@</span>
@@ -809,7 +930,7 @@ const RightLine = memo(function RightLine({
   const line = aligned.right;
 
   if (!line) {
-    return <div className="h-6 bg-muted/20" />;
+    return <div className="h-6 w-max min-w-full bg-muted/20" />;
   }
 
   const isAddition = line.type === "addition";
@@ -821,7 +942,7 @@ const RightLine = memo(function RightLine({
   return (
     <div
       className={cn(
-        "flex h-6 font-mono text-xs",
+        "flex h-6 w-max min-w-full font-mono text-xs",
         isAddition && "bg-green-500/10",
         matchesQuery && "bg-amber-500/15",
       )}
