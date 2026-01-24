@@ -74,6 +74,7 @@ jobs:
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           projectPath: apps/web
+          tauriScript: bun run tauri
           args: ${{ matrix.args }}
 
   publish-release:
