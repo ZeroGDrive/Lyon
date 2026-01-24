@@ -53,12 +53,40 @@ Download the latest release for your platform from the [Releases](https://github
   - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) — Uses your Claude Pro/Team subscription
   - [Codex CLI](https://github.com/openai/codex) — Uses your OpenAI/ChatGPT subscription
 
+## Setup
+
+### GitHub CLI (required)
+
+Lyon uses the GitHub CLI for all GitHub operations. Install and authenticate:
+
+```bash
+# Install GitHub CLI: https://cli.github.com/
+gh auth login
+```
+
+### AI Providers (optional, for AI reviews)
+
+To use AI-powered code reviews, you need one of these CLIs installed and authenticated:
+
+**Claude Code** (requires Claude Pro or Team subscription):
+```bash
+# Install: https://docs.anthropic.com/en/docs/claude-code
+claude login
+```
+
+**Codex** (requires ChatGPT/OpenAI subscription):
+```bash
+# Install: https://github.com/openai/codex
+codex login
+```
+
 ## Quick Start
 
 1. Download and install Lyon for your platform
-2. Ensure GitHub CLI is installed and authenticated: `gh auth login`
-3. Launch Lyon and add your repositories
-4. Select a PR and start reviewing!
+2. Set up GitHub CLI: `gh auth login`
+3. (Optional) Set up Claude Code or Codex for AI reviews
+4. Launch Lyon and add your repositories
+5. Select a PR and start reviewing!
 
 ## AI Reviews
 
