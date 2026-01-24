@@ -24,6 +24,8 @@
 
 Lyon is a native desktop app that brings AI-powered code reviews to your pull request workflow. Connect to GitHub, browse PRs across your repositories, and get intelligent feedback from Claude or Codex — all from a beautiful, fast interface.
 
+> **Use your existing AI subscription** — Lyon works with your Claude Code or Codex CLI. No additional API costs or subscriptions required. If you already have access to Claude or Codex, you're ready to go.
+
 ## Features
 
 - **PR Dashboard** — Browse pull requests across multiple repositories with smart filtering and instant refresh
@@ -47,9 +49,9 @@ Download the latest release for your platform from the [Releases](https://github
 ### Requirements
 
 - **GitHub CLI** (`gh`) — [Install](https://cli.github.com/) and authenticate with `gh auth login`
-- **AI Provider** (optional):
-  - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) for Claude reviews
-  - [Codex CLI](https://github.com/openai/codex) for OpenAI reviews
+- **AI Provider** (optional) — Use your existing subscription, no extra costs:
+  - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) — Uses your Claude Pro/Team subscription
+  - [Codex CLI](https://github.com/openai/codex) — Uses your OpenAI/ChatGPT subscription
 
 ## Quick Start
 
