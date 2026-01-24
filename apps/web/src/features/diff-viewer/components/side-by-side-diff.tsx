@@ -197,7 +197,7 @@ function SideBySideDiff({
   if (disableVirtualization) {
     return (
       <div className="flex bg-background/30">
-        <div className="w-1/2 min-w-0 overflow-hidden border-r border-glass-border">
+        <div className="w-1/2 min-w-0 overflow-x-auto border-r border-glass-border">
           <div className="min-w-max">
             {alignedLines.map((aligned, index) => (
               <LeftLine
@@ -225,7 +225,7 @@ function SideBySideDiff({
             ))}
           </div>
         </div>
-        <div className="w-1/2 min-w-0 overflow-hidden">
+        <div className="w-1/2 min-w-0 overflow-x-auto">
           <div className="min-w-max">
             {alignedLines.map((aligned, index) => (
               <RightLine
@@ -266,7 +266,7 @@ function SideBySideDiff({
   return (
     <div ref={parentRef} className="h-full overflow-y-auto bg-background/30">
       <div className="flex" style={{ height: totalHeight }}>
-        <div className="relative w-1/2 overflow-hidden border-r border-glass-border">
+        <div className="relative w-1/2 overflow-x-auto border-r border-glass-border">
           <div className="min-w-max" style={{ height: totalHeight }}>
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const aligned = alignedLines[virtualRow.index];
@@ -309,7 +309,7 @@ function SideBySideDiff({
           </div>
         </div>
 
-        <div className="relative w-1/2 overflow-hidden">
+        <div className="relative w-1/2 overflow-x-auto">
           <div className="min-w-max" style={{ height: totalHeight }}>
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const aligned = alignedLines[virtualRow.index];

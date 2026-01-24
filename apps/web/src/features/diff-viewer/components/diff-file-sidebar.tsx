@@ -287,7 +287,7 @@ const VirtualRow = memo(function VirtualRow({
           <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
         )}
         <Folder className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="truncate font-mono text-foreground/80">{row.name}</span>
+        <span className="whitespace-nowrap font-mono text-foreground/80">{row.name}</span>
       </button>
     );
   }
@@ -315,7 +315,7 @@ const VirtualRow = memo(function VirtualRow({
       ) : (
         <Icon className={cn("size-3.5 shrink-0", statusColors[file.status])} />
       )}
-      <span className="min-w-0 flex-1 truncate font-mono text-foreground/80">{row.name}</span>
+      <span className="whitespace-nowrap font-mono text-foreground/80">{row.name}</span>
       <div className="flex shrink-0 items-center gap-1.5 pr-2 text-[10px] font-medium">
         {commentCount > 0 && (
           <span className="flex items-center gap-0.5 text-primary">
