@@ -45,7 +45,7 @@
       }
     },
     "updater": {
-      "endpoints": ["https://github.com/YOUR_ORG/lyon/releases/latest/download/latest.json"],
+      "endpoints": ["https://github.com/ZeroGDrive/Lyon/releases/latest/download/latest.json"],
       "pubkey": ""
     }
   }
