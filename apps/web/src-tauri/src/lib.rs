@@ -411,10 +411,12 @@ async fn set_tray_badge(count: Option<i32>, app: AppHandle) -> Result<(), String
 
 #[tauri::command]
 async fn update_tray_menu(prs: Vec<TrayPRInfo>, app: AppHandle) -> Result<(), String> {
-    use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+
+    println!("[TRAY] update_tray_menu called with {} PRs", prs.len());
 
     if let Some(tray) = app.tray_by_id("main-tray") {
-        let mut menu_builder = MenuBuilder::new(&app);
+        let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
 
         let display_prs: Vec<_> = prs.iter().take(10).collect();
         for pr in &display_prs {
@@ -424,75 +426,80 @@ async fn update_tray_menu(prs: Vec<TrayPRInfo>, app: AppHandle) -> Result<(), St
                 format!("#{} {}", pr.number, pr.title)
             };
             let id = format!("pr-{}-{}", pr.repo.replace("/", "-"), pr.number);
-            let item = MenuItemBuilder::with_id(&id, &title)
-                .build(&app)
+            let item = MenuItem::with_id(&app, &id, &title, true, None::<&str>)
                 .map_err(|e| e.to_string())?;
-            menu_builder = menu_builder.item(&item);
+            items.push(Box::new(item));
         }
 
         if !display_prs.is_empty() {
-            menu_builder = menu_builder.separator();
+            items.push(Box::new(PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?));
         }
 
-        let show_all = MenuItemBuilder::with_id("show-all", "Show All PRs...")
-            .build(&app)
+        let show_all = MenuItem::with_id(&app, "show-all", "Show All PRs...", true, None::<&str>)
             .map_err(|e| e.to_string())?;
-        menu_builder = menu_builder.item(&show_all);
+        items.push(Box::new(show_all));
 
-        menu_builder = menu_builder.separator();
+        items.push(Box::new(PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?));
 
-        let refresh = MenuItemBuilder::with_id("refresh", "Refresh PRs")
-            .accelerator("CmdOrCtrl+R")
-            .build(&app)
+        let refresh = MenuItem::with_id(&app, "refresh", "Refresh PRs", true, Some("CmdOrCtrl+R"))
             .map_err(|e| e.to_string())?;
-        let settings = MenuItemBuilder::with_id("settings", "Settings...")
-            .accelerator("CmdOrCtrl+,")
-            .build(&app)
+        let settings = MenuItem::with_id(&app, "settings", "Settings...", true, Some("CmdOrCtrl+,"))
             .map_err(|e| e.to_string())?;
-        menu_builder = menu_builder.item(&refresh).item(&settings);
+        items.push(Box::new(refresh));
+        items.push(Box::new(settings));
 
-        menu_builder = menu_builder.separator();
+        items.push(Box::new(PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?));
 
         let quit = PredefinedMenuItem::quit(&app, Some("Quit Lyon"))
             .map_err(|e| e.to_string())?;
-        menu_builder = menu_builder.item(&quit);
+        items.push(Box::new(quit));
 
-        let menu = menu_builder.build().map_err(|e| e.to_string())?;
+        let item_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = 
+            items.iter().map(|b| b.as_ref()).collect();
+        let menu = Menu::with_items(&app, &item_refs).map_err(|e| e.to_string())?;
+        
         tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
+        println!("[TRAY] Menu updated successfully");
+    } else {
+        println!("[TRAY] Tray not found!");
     }
 
     Ok(())
 }
 
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tauri::tray::TrayIconBuilder;
 
-    let show_all = MenuItemBuilder::with_id("show-all", "Show All PRs...").build(app)?;
-    let refresh_item = MenuItemBuilder::with_id("refresh", "Refresh PRs")
-        .accelerator("CmdOrCtrl+R")
-        .build(app)?;
-    let settings_item = MenuItemBuilder::with_id("settings", "Settings...")
-        .accelerator("CmdOrCtrl+,")
-        .build(app)?;
+    let show_all = MenuItem::with_id(app, "show-all", "Show All PRs...", true, None::<&str>)?;
+    let refresh_item = MenuItem::with_id(app, "refresh", "Refresh PRs", true, Some("CmdOrCtrl+R"))?;
+    let settings_item = MenuItem::with_id(app, "settings", "Settings...", true, Some("CmdOrCtrl+,"))?;
+    let separator1 = PredefinedMenuItem::separator(app)?;
+    let separator2 = PredefinedMenuItem::separator(app)?;
     let quit_item = PredefinedMenuItem::quit(app, Some("Quit Lyon"))?;
 
-    let menu = MenuBuilder::new(app)
-        .item(&show_all)
-        .separator()
-        .item(&refresh_item)
-        .item(&settings_item)
-        .separator()
-        .item(&quit_item)
-        .build()?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &show_all,
+            &separator1,
+            &refresh_item,
+            &settings_item,
+            &separator2,
+            &quit_item,
+        ],
+    )?;
 
-    let _tray = TrayIconBuilder::with_id("main-tray")
+    println!("[TRAY] Building tray icon...");
+
+    let tray = TrayIconBuilder::with_id("main-tray")
         .tooltip("Lyon - PR Review")
         .icon(tauri::include_image!("icons/tray-template@2x.png"))
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| {
             let event_id = event.id().as_ref();
+            println!("[TRAY] Menu event: {}", event_id);
             if event_id.starts_with("pr-") {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
@@ -512,7 +519,12 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         })
+        .on_tray_icon_event(|_tray, event| {
+            println!("[TRAY] Icon event: {:?}", event);
+        })
         .build(app)?;
+
+    println!("[TRAY] Tray built successfully with id: {:?}", tray.id());
 
     Ok(())
 }
