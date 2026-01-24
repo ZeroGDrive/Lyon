@@ -16,16 +16,43 @@ export function UpdateChecker() {
   useEffect(() => {
     async function checkAndDownload() {
       try {
+        console.log("[Updater] Checking for updates...");
         const { check } = await import("@tauri-apps/plugin-updater");
         const update = await check();
-        if (!update) return;
+
+        if (!update) {
+          console.log("[Updater] No update available");
+          return;
+        }
+
+        console.log("[Updater] Update available:", update.version);
 
         // Check if user dismissed this version
         const dismissedVersion = localStorage.getItem(DISMISSED_VERSION_KEY);
-        if (dismissedVersion === update.version) return;
+        if (dismissedVersion === update.version) {
+          console.log("[Updater] Version dismissed by user");
+          return;
+        }
 
-        // Download in background
-        await update.downloadAndInstall();
+        // Download the update (don't install yet)
+        console.log("[Updater] Downloading update...");
+        let downloadedBytes = 0;
+        let totalBytes = 0;
+
+        await update.download((progress) => {
+          if (progress.event === "Started" && progress.data.contentLength) {
+            totalBytes = progress.data.contentLength;
+            console.log(`[Updater] Download started, total size: ${totalBytes} bytes`);
+          } else if (progress.event === "Progress") {
+            downloadedBytes += progress.data.chunkLength;
+            const percent = totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : 0;
+            console.log(`[Updater] Downloaded ${percent}%`);
+          } else if (progress.event === "Finished") {
+            console.log("[Updater] Download finished");
+          }
+        });
+
+        console.log("[Updater] Download complete, showing toast...");
 
         // Show toast when download is complete
         toastIdRef.current = toast.custom(
@@ -48,6 +75,9 @@ export function UpdateChecker() {
                   className="flex-1"
                   onClick={async () => {
                     toast.dismiss(id);
+                    console.log("[Updater] Installing update...");
+                    await update.install();
+                    console.log("[Updater] Relaunching...");
                     const { relaunch } = await import("@tauri-apps/plugin-process");
                     await relaunch();
                   }}
@@ -85,8 +115,8 @@ export function UpdateChecker() {
           ),
           { duration: Infinity },
         );
-      } catch {
-        // Silently fail - update check is not critical
+      } catch (error) {
+        console.error("[Updater] Error:", error);
       }
     }
 
