@@ -286,7 +286,7 @@ function DiffViewer({
                 commentsByLine={commentsByLine}
               />
 
-              <div className="flex-1 overflow-hidden">
+              <div className="min-w-0 flex-1">
                 {selectedFile ? (
                   <VirtualizedDiff
                     file={selectedFile}

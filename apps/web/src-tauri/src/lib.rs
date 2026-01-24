@@ -234,14 +234,25 @@ async fn start_ai_stream(
     let process_id = process_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let process_id_clone = process_id.clone();
 
-    let mut child = TokioCommand::new(&command)
-        .args(&args)
+    let mut cmd = TokioCommand::new(&command);
+    cmd.args(&args)
         .env("PATH", get_enhanced_path())
         .stdin(if stdin_input.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true) // Ensure process is killed when dropped
-        .spawn()
+        .kill_on_drop(true);
+
+    // On Unix, create a new process group so we can kill all descendants
+    #[cfg(unix)]
+    unsafe {
+        cmd.pre_exec(|| {
+            // Create a new process group with this process as the leader
+            libc::setpgid(0, 0);
+            Ok(())
+        });
+    }
+
+    let mut child = cmd.spawn()
         .map_err(|e| format!("Failed to spawn {}: {}", command, e))?;
 
     if let Some(input) = stdin_input {
@@ -394,6 +405,9 @@ async fn start_ai_stream(
         });
     }
 
+    // Get the process ID for killing the process group later
+    let child_pid = child.id();
+
     // Completion monitoring task
     let complete_process_id = process_id.clone();
     let complete_app = app;
@@ -403,14 +417,41 @@ async fn start_ai_stream(
         let exit_status = tokio::select! {
             status = child.wait() => Some(status),
             _ = cancel_rx => {
-                let _ = child.kill().await;
+                // Kill the entire process group on Unix
+                #[cfg(unix)]
+                if let Some(pid) = child_pid {
+                    // Kill the process group (negative PID)
+                    unsafe {
+                        libc::kill(-(pid as i32), libc::SIGTERM);
+                    }
+                    // Give it a moment to terminate gracefully
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    // Force kill if still running
+                    unsafe {
+                        libc::kill(-(pid as i32), libc::SIGKILL);
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = child.kill().await;
+                }
                 let _ = child.wait().await;
                 None
             }
         };
 
         let exit_status = match exit_status {
-            Some(status) => status,
+            Some(status) => {
+                // Even on normal completion, ensure any child processes are cleaned up
+                #[cfg(unix)]
+                if let Some(pid) = child_pid {
+                    // Try to kill any remaining processes in the group
+                    unsafe {
+                        libc::kill(-(pid as i32), libc::SIGTERM);
+                    }
+                }
+                status
+            }
             None => return,
         };
 
