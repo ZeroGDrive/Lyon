@@ -2,16 +2,10 @@ import { HeadContent, Outlet, createRootRouteWithContext } from "@tanstack/react
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 
 import { ThemeProvider } from "@/components/theme-provider";
+import { UpdateChecker } from "@/components/update-checker";
 import { Toaster } from "@/components/ui/sonner";
-import { useUpdater } from "@/hooks/use-updater";
 
 import "../index.css";
-
-// Component to initialize auto-updater
-function AutoUpdater() {
-  useUpdater();
-  return null;
-}
 
 export interface RouterAppContext {}
 
@@ -65,7 +59,7 @@ function RootComponent() {
         disableTransitionOnChange
         storageKey="lyon-ui-theme"
       >
-        <AutoUpdater />
+        <UpdateChecker />
         <Outlet />
         <Toaster richColors position="bottom-right" />
       </ThemeProvider>
