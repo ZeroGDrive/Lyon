@@ -82,10 +82,22 @@ export async function startStreamingAIReview(
 
   const command = getProviderCommand(config.provider);
   const prompt = buildReviewPrompt(prInfo, config.systemPrompt);
-  const providerConfig = getProviderConfig(config.provider, config.model, config.reasoningEffort, prompt);
+  const providerConfig = getProviderConfig(
+    config.provider,
+    config.model,
+    config.reasoningEffort,
+    prompt,
+  );
   const processId = crypto.randomUUID();
 
-  console.log("[AI Review] Starting review with provider:", config.provider, "model:", config.model, "reasoning:", config.reasoningEffort);
+  console.log(
+    "[AI Review] Starting review with provider:",
+    config.provider,
+    "model:",
+    config.model,
+    "reasoning:",
+    config.reasoningEffort,
+  );
   console.log("[AI Review] Command:", command);
   console.log("[AI Review] PR:", prInfo.repository, "#", prInfo.number);
 
@@ -121,7 +133,11 @@ export async function startStreamingAIReview(
       if (state.isCleanedUp) return;
       if (event.payload.process_id !== state.processId) return;
 
-      console.log("[AI Review] Stream event:", event.payload.event_type, event.payload.data?.slice(0, 200));
+      console.log(
+        "[AI Review] Stream event:",
+        event.payload.event_type,
+        event.payload.data?.slice(0, 200),
+      );
 
       switch (event.payload.event_type) {
         case "stdout":
@@ -162,7 +178,12 @@ export async function startStreamingAIReview(
       if (state.isCleanedUp) return;
       if (event.payload.process_id !== state.processId) return;
 
-      console.log("[AI Review] Content event:", event.payload.event_type, "text length:", event.payload.text?.length ?? 0);
+      console.log(
+        "[AI Review] Content event:",
+        event.payload.event_type,
+        "text length:",
+        event.payload.text?.length ?? 0,
+      );
 
       switch (event.payload.event_type) {
         case "thinking_start":
@@ -196,7 +217,6 @@ export async function startStreamingAIReview(
       console.warn("[AI Review] Process ID mismatch:", returnedId, processId);
     }
     console.log("[AI Review] Process started with ID:", returnedId);
-
   } catch (error) {
     console.error("[AI Review] Failed to start process:", error);
     cleanup();
@@ -348,7 +368,10 @@ export function parseAIReviewResponse(
       repository,
       provider,
       status: "completed",
-      summary: response.length > 0 ? `Failed to parse response: ${response.slice(0, 200)}...` : "No response received",
+      summary:
+        response.length > 0
+          ? `Failed to parse response: ${response.slice(0, 200)}...`
+          : "No response received",
       comments: [],
       suggestions: [],
       createdAt: now,
@@ -422,7 +445,11 @@ export async function checkProviderStatus(provider: AIProvider): Promise<AIProvi
       return { installed: true, authenticated: true };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      if (errorMsg.includes("not logged in") || errorMsg.includes("auth") || errorMsg.includes("API key")) {
+      if (
+        errorMsg.includes("not logged in") ||
+        errorMsg.includes("auth") ||
+        errorMsg.includes("API key")
+      ) {
         return {
           installed: true,
           authenticated: false,

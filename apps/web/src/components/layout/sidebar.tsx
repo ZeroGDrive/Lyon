@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
 
-import { Loader2 } from "lucide-react";
-
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Spinner } from "@/components/ui/spinner";
 
 interface SidebarProps {
   children: ReactNode;
@@ -125,7 +124,7 @@ function SidebarItem({
 
       {loading ? (
         <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-          <Loader2 className="size-4 animate-spin text-primary" />
+          <Spinner size="sm" className="text-primary" />
         </span>
       ) : icon ? (
         <span

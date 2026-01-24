@@ -1,26 +1,30 @@
-import type { AIProvider, AIReviewComment, AIReviewResult as AIReviewResultType, CodexReasoningEffort } from "@/types";
+import type {
+  AIProvider,
+  AIReviewComment,
+  AIReviewResult as AIReviewResultType,
+  CodexReasoningEffort,
+} from "@/types";
 import { CODEX_REASONING_EFFORTS, DEFAULT_SYSTEM_PROMPTS, MODELS_BY_PROVIDER } from "@/types";
 
-import {
-  AlertCircle,
-  Bot,
-  Check,
-  CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  FileCode2,
-  Loader2,
-  Send,
-  Sparkles,
-  Square,
-  XCircle,
-} from "lucide-react";
-import { useMemo, useState } from "react";
+import { formatDistanceToNow } from "date-fns";
+import AlertCircle from "lucide-react/dist/esm/icons/circle-alert";
+import Bot from "lucide-react/dist/esm/icons/bot";
+import Check from "lucide-react/dist/esm/icons/check";
+import CheckCircle from "lucide-react/dist/esm/icons/check-circle";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
+import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
+import FileCode2 from "lucide-react/dist/esm/icons/file-code-2";
+import Send from "lucide-react/dist/esm/icons/send";
+import Sparkles from "lucide-react/dist/esm/icons/sparkles";
+import Square from "lucide-react/dist/esm/icons/square";
+import XCircle from "lucide-react/dist/esm/icons/x-circle";
+import { useEffect, useMemo, useState } from "react";
 
 import { GlassCard } from "@/components/layout/main-content";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Select,
   SelectContent,
@@ -51,10 +55,18 @@ function AIReviewPanel({
   onCommentClick,
   onPostComment,
 }: AIReviewPanelProps) {
-  const { config, setProvider, setModel, setReasoningEffort, setSystemPrompt, getReviewsForPR, getActiveReviewForProvider } =
-    useReviewStore();
+  const {
+    config,
+    setProvider,
+    setModel,
+    setReasoningEffort,
+    setSystemPrompt,
+    getReviewsForPR,
+    getActiveReviewForProvider,
+  } = useReviewStore();
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [promptTemplate, setPromptTemplate] = useState<string>("default");
+  const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null);
 
   const reviewFocusItems = [
     { value: "default", label: "General Review" },
@@ -64,7 +76,22 @@ function AIReviewPanel({
   ];
 
   const providerReviews = getReviewsForPR(prNumber, repository, config.provider);
-  const latestReview = providerReviews[0] ?? getActiveReviewForProvider(config.provider);
+  const activeReview = getActiveReviewForProvider(config.provider);
+  const selectedReview = selectedReviewId
+    ? (providerReviews.find((review) => review.id === selectedReviewId) ?? null)
+    : null;
+  const latestReview = selectedReview ?? providerReviews[0] ?? activeReview;
+
+  const historyItems = useMemo(() => {
+    return providerReviews.map((review) => {
+      const timeAgo = formatDistanceToNow(new Date(review.createdAt), { addSuffix: true });
+      const score = review.overallScore ? ` • ${review.overallScore}/10` : "";
+      return {
+        value: review.id,
+        label: `${timeAgo} • ${review.status}${score}`,
+      };
+    });
+  }, [providerReviews]);
 
   const providers: AIProvider[] = ["claude", "codex"];
 
@@ -84,6 +111,16 @@ function AIReviewPanel({
   const handleStartReview = () => {
     onStartReview(config.provider, config.model ?? "", config.systemPrompt);
   };
+
+  useEffect(() => {
+    if (providerReviews.length === 0) {
+      setSelectedReviewId(null);
+      return;
+    }
+    if (!selectedReviewId || !providerReviews.some((review) => review.id === selectedReviewId)) {
+      setSelectedReviewId(providerReviews[0]?.id ?? null);
+    }
+  }, [providerReviews, selectedReviewId, config.provider, prNumber, repository]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -131,9 +168,7 @@ function AIReviewPanel({
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Model
-            </label>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Model</label>
             <div className="flex flex-wrap gap-1.5">
               {MODELS_BY_PROVIDER[config.provider].map((model) => (
                 <button
@@ -225,12 +260,41 @@ function AIReviewPanel({
       {isLoading && (
         <GlassCard className="shrink-0 p-4" variant="subtle">
           <div className="flex items-center gap-3">
-            <Loader2 className="size-5 animate-spin text-primary" />
+            <Spinner className="text-primary" />
             <div>
               <p className="text-sm font-medium text-foreground">AI is reviewing...</p>
               <p className="text-xs text-muted-foreground">
                 This may take a minute. Using {config.provider}.
               </p>
+            </div>
+          </div>
+        </GlassCard>
+      )}
+
+      {!isLoading && historyItems.length > 1 && (
+        <GlassCard className="shrink-0 p-4" variant="subtle">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-foreground">Review history</p>
+              <p className="text-xs text-muted-foreground">Switch between previous AI runs</p>
+            </div>
+            <div className="min-w-[220px]">
+              <Select
+                value={selectedReviewId}
+                onValueChange={(value) => setSelectedReviewId(value)}
+                items={historyItems}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a review" />
+                </SelectTrigger>
+                <SelectContent>
+                  {historyItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </GlassCard>
@@ -255,14 +319,19 @@ interface AIReviewResultCardProps {
   className?: string;
 }
 
-function ReviewResultCard({ review, onCommentClick, onPostComment, className }: AIReviewResultCardProps) {
+function ReviewResultCard({
+  review,
+  onCommentClick,
+  onPostComment,
+  className,
+}: AIReviewResultCardProps) {
   const statusIcon =
     review.status === "completed" ? (
       <CheckCircle className="size-4 text-foreground" />
     ) : review.status === "failed" ? (
       <XCircle className="size-4 text-muted-foreground" />
     ) : review.status === "running" ? (
-      <Loader2 className="size-4 animate-spin text-foreground" />
+      <Spinner size="xs" className="text-foreground" />
     ) : (
       <AlertCircle className="size-4 text-muted-foreground" />
     );
@@ -304,11 +373,15 @@ function ReviewResultCard({ review, onCommentClick, onPostComment, className }: 
             </div>
           )}
 
-          {review.status === "completed" && !review.summary && review.comments.length === 0 && !review.error && (
-            <div className="mt-3 rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-400">
-              Review completed but no structured feedback was generated. The AI may have responded in an unexpected format.
-            </div>
-          )}
+          {review.status === "completed" &&
+            !review.summary &&
+            review.comments.length === 0 &&
+            !review.error && (
+              <div className="mt-3 rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-400">
+                Review completed but no structured feedback was generated. The AI may have responded
+                in an unexpected format.
+              </div>
+            )}
 
           {review.error && (
             <div className="mt-3 rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-400">
@@ -328,10 +401,15 @@ interface ReviewCommentsGroupedProps {
   onPostComment?: (comment: AIReviewComment) => Promise<boolean>;
 }
 
-function ReviewCommentsGrouped({ comments, onCommentClick, onPostComment }: ReviewCommentsGroupedProps) {
+function ReviewCommentsGrouped({
+  comments,
+  onCommentClick,
+  onPostComment,
+}: ReviewCommentsGroupedProps) {
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const [postingCommentId, setPostingCommentId] = useState<string | null>(null);
   const [postedCommentIds, setPostedCommentIds] = useState<Set<string>>(new Set());
+  const [isPostingAll, setIsPostingAll] = useState(false);
 
   const commentsByFile = useMemo(() => {
     const grouped = new Map<string, AIReviewComment[]>();
@@ -367,6 +445,23 @@ function ReviewCommentsGrouped({ comments, onCommentClick, onPostComment }: Revi
     setPostingCommentId(null);
   };
 
+  const handlePostAll = async () => {
+    if (!onPostComment || isPostingAll) return;
+    const pendingComments = comments.filter((comment) => !postedCommentIds.has(comment.id));
+    if (pendingComments.length === 0) return;
+
+    setIsPostingAll(true);
+    for (const comment of pendingComments) {
+      setPostingCommentId(comment.id);
+      const success = await onPostComment(comment);
+      if (success) {
+        setPostedCommentIds((prev) => new Set(prev).add(comment.id));
+      }
+    }
+    setPostingCommentId(null);
+    setIsPostingAll(false);
+  };
+
   const severityColors: Record<string, string> = {
     critical: "bg-red-500/20 text-red-400 border-red-500/30",
     warning: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
@@ -383,132 +478,162 @@ function ReviewCommentsGrouped({ comments, onCommentClick, onPostComment }: Revi
 
   return (
     <div className="space-y-2">
+      {onPostComment && comments.length > 1 && (
+        <div className="flex items-center justify-between rounded-lg border border-glass-border-subtle bg-glass-bg-subtle/50 px-3 py-2">
+          <div className="text-[10px] text-muted-foreground">
+            {postedCommentIds.size}/{comments.length} posted
+          </div>
+          <button
+            type="button"
+            onClick={handlePostAll}
+            disabled={isPostingAll || postedCommentIds.size === comments.length}
+            className={cn(
+              "flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors",
+              postedCommentIds.size === comments.length
+                ? "bg-green-500/20 text-green-400"
+                : "bg-primary/10 text-primary hover:bg-primary/20",
+              (isPostingAll || postedCommentIds.size === comments.length) && "cursor-default",
+            )}
+            title={
+              postedCommentIds.size === comments.length
+                ? "All comments posted"
+                : "Post all comments to GitHub"
+            }
+          >
+            {isPostingAll ? <Spinner size="xs" className="size-3" /> : <Send className="size-3" />}
+            {isPostingAll
+              ? "Posting..."
+              : postedCommentIds.size === comments.length
+                ? "Posted"
+                : "Post all"}
+          </button>
+        </div>
+      )}
       {Array.from(commentsByFile.entries()).map(([filePath, fileComments]) => {
-          const isExpanded = expandedFiles.has(filePath);
-          const fileName = filePath.split("/").pop() ?? filePath;
-          const criticalCount = fileComments.filter((c) => c.severity === "critical").length;
-          const warningCount = fileComments.filter((c) => c.severity === "warning").length;
+        const isExpanded = expandedFiles.has(filePath);
+        const fileName = filePath.split("/").pop() ?? filePath;
+        const criticalCount = fileComments.filter((c) => c.severity === "critical").length;
+        const warningCount = fileComments.filter((c) => c.severity === "warning").length;
 
-          return (
-            <div
-              key={filePath}
-              className="rounded-lg border border-glass-border-subtle bg-glass-bg-subtle/50"
+        return (
+          <div
+            key={filePath}
+            className="rounded-lg border border-glass-border-subtle bg-glass-bg-subtle/50"
+          >
+            <button
+              type="button"
+              onClick={() => toggleFile(filePath)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-glass-highlight"
             >
-              <button
-                type="button"
-                onClick={() => toggleFile(filePath)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-glass-highlight"
-              >
-                {isExpanded ? (
-                  <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                )}
-                <FileCode2 className="size-4 shrink-0 text-primary" />
-                <span className="flex-1 truncate font-mono text-xs text-foreground">
-                  {fileName}
-                </span>
-                <div className="flex items-center gap-1.5">
-                  {criticalCount > 0 && (
-                    <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[10px] font-medium text-red-400">
-                      {criticalCount}
-                    </span>
-                  )}
-                  {warningCount > 0 && (
-                    <span className="rounded-full bg-yellow-500/20 px-1.5 py-0.5 text-[10px] font-medium text-yellow-400">
-                      {warningCount}
-                    </span>
-                  )}
-                  <span className="text-[10px] text-muted-foreground">
-                    {fileComments.length} {fileComments.length === 1 ? "comment" : "comments"}
+              {isExpanded ? (
+                <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+              )}
+              <FileCode2 className="size-4 shrink-0 text-primary" />
+              <span className="flex-1 truncate font-mono text-xs text-foreground">{fileName}</span>
+              <div className="flex items-center gap-1.5">
+                {criticalCount > 0 && (
+                  <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[10px] font-medium text-red-400">
+                    {criticalCount}
                   </span>
-                </div>
-              </button>
+                )}
+                {warningCount > 0 && (
+                  <span className="rounded-full bg-yellow-500/20 px-1.5 py-0.5 text-[10px] font-medium text-yellow-400">
+                    {warningCount}
+                  </span>
+                )}
+                <span className="text-[10px] text-muted-foreground">
+                  {fileComments.length} {fileComments.length === 1 ? "comment" : "comments"}
+                </span>
+              </div>
+            </button>
 
-              {isExpanded && (
-                <div className="border-t border-glass-border-subtle">
-                  {fileComments
-                    .sort((a, b) => a.line - b.line)
-                    .map((comment) => {
-                      const isPosting = postingCommentId === comment.id;
-                      const isPosted = postedCommentIds.has(comment.id);
+            {isExpanded && (
+              <div className="border-t border-glass-border-subtle">
+                {fileComments
+                  .toSorted((a, b) => a.line - b.line)
+                  .map((comment) => {
+                    const isPosting = postingCommentId === comment.id;
+                    const isPosted = postedCommentIds.has(comment.id);
 
-                      return (
-                        <div
-                          key={comment.id}
-                          className={cn(
-                            "border-l-2 px-3 py-2 transition-colors hover:bg-glass-highlight",
-                            severityBorderColors[comment.severity] ?? "border-muted-foreground/30",
-                          )}
-                        >
-                          <div className="mb-1 flex items-center justify-between gap-2">
-                            <button
-                              type="button"
-                              onClick={() => onCommentClick?.(comment.path, comment.line)}
-                              className="flex items-center gap-2"
-                            >
-                              <span className="font-mono text-[10px] text-muted-foreground">
-                                Line {comment.line}
-                              </span>
-                              <span
-                                className={cn(
-                                  "rounded-full border px-1.5 py-0.5 text-[10px] font-medium capitalize",
-                                  severityColors[comment.severity] ?? "bg-muted text-muted-foreground",
-                                )}
-                              >
-                                {comment.severity}
-                              </span>
-                            </button>
-                            {onPostComment && (
-                              <button
-                                type="button"
-                                onClick={(e) => handlePostComment(comment, e)}
-                                disabled={isPosting || isPosted}
-                                className={cn(
-                                  "flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors",
-                                  isPosted
-                                    ? "bg-green-500/20 text-green-400"
-                                    : "bg-primary/10 text-primary hover:bg-primary/20",
-                                  (isPosting || isPosted) && "cursor-default",
-                                )}
-                                title={isPosted ? "Posted to GitHub" : "Post comment to GitHub"}
-                              >
-                                {isPosting ? (
-                                  <Loader2 className="size-3 animate-spin" />
-                                ) : isPosted ? (
-                                  <Check className="size-3" />
-                                ) : (
-                                  <Send className="size-3" />
-                                )}
-                                {isPosted ? "Posted" : isPosting ? "Posting..." : "Post"}
-                              </button>
-                            )}
-                          </div>
+                    return (
+                      <div
+                        key={comment.id}
+                        className={cn(
+                          "border-l-2 px-3 py-2 transition-colors hover:bg-glass-highlight",
+                          severityBorderColors[comment.severity] ?? "border-muted-foreground/30",
+                        )}
+                      >
+                        <div className="mb-1 flex items-center justify-between gap-2">
                           <button
                             type="button"
                             onClick={() => onCommentClick?.(comment.path, comment.line)}
-                            className="w-full text-left"
+                            className="flex items-center gap-2"
                           >
-                            <p className="text-xs text-foreground/80">{comment.body}</p>
-                            {comment.suggestion && (
-                              <div className="mt-2 rounded bg-glass-bg p-2">
-                                <p className="font-mono text-[10px] text-muted-foreground">
-                                  Suggestion:
-                                </p>
-                                <pre className="mt-1 whitespace-pre-wrap text-[10px] text-foreground/70">
-                                  {comment.suggestion}
-                                </pre>
-                              </div>
-                            )}
+                            <span className="font-mono text-[10px] text-muted-foreground">
+                              Line {comment.line}
+                            </span>
+                            <span
+                              className={cn(
+                                "rounded-full border px-1.5 py-0.5 text-[10px] font-medium capitalize",
+                                severityColors[comment.severity] ??
+                                  "bg-muted text-muted-foreground",
+                              )}
+                            >
+                              {comment.severity}
+                            </span>
                           </button>
+                          {onPostComment && (
+                            <button
+                              type="button"
+                              onClick={(e) => handlePostComment(comment, e)}
+                              disabled={isPosting || isPosted}
+                              className={cn(
+                                "flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors",
+                                isPosted
+                                  ? "bg-green-500/20 text-green-400"
+                                  : "bg-primary/10 text-primary hover:bg-primary/20",
+                                (isPosting || isPosted) && "cursor-default",
+                              )}
+                              title={isPosted ? "Posted to GitHub" : "Post comment to GitHub"}
+                            >
+                              {isPosting ? (
+                                <Spinner size="xs" className="size-3" />
+                              ) : isPosted ? (
+                                <Check className="size-3" />
+                              ) : (
+                                <Send className="size-3" />
+                              )}
+                              {isPosted ? "Posted" : isPosting ? "Posting..." : "Post"}
+                            </button>
+                          )}
                         </div>
-                      );
-                    })}
-                </div>
-              )}
-            </div>
-          );
-        })}
+                        <button
+                          type="button"
+                          onClick={() => onCommentClick?.(comment.path, comment.line)}
+                          className="w-full text-left"
+                        >
+                          <p className="text-xs text-foreground/80">{comment.body}</p>
+                          {comment.suggestion && (
+                            <div className="mt-2 rounded bg-glass-bg p-2">
+                              <p className="font-mono text-[10px] text-muted-foreground">
+                                Suggestion:
+                              </p>
+                              <pre className="mt-1 whitespace-pre-wrap text-[10px] text-foreground/70">
+                                {comment.suggestion}
+                              </pre>
+                            </div>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

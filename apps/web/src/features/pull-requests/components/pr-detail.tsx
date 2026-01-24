@@ -1,21 +1,18 @@
 import type { PullRequest } from "@/types";
 
 import { open } from "@tauri-apps/plugin-shell";
-import {
-  AlertTriangle,
-  Check,
-  CheckCircle,
-  Clock,
-  ExternalLink,
-  Files,
-  GitBranch,
-  GitMerge,
-  GitPullRequest,
-  Loader2,
-  MessageSquareWarning,
-  X,
-  XCircle,
-} from "lucide-react";
+import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle";
+import Check from "lucide-react/dist/esm/icons/check";
+import CheckCircle from "lucide-react/dist/esm/icons/check-circle";
+import Clock from "lucide-react/dist/esm/icons/clock";
+import ExternalLink from "lucide-react/dist/esm/icons/external-link";
+import Files from "lucide-react/dist/esm/icons/files";
+import GitBranch from "lucide-react/dist/esm/icons/git-branch";
+import GitMerge from "lucide-react/dist/esm/icons/git-merge";
+import GitPullRequest from "lucide-react/dist/esm/icons/git-pull-request";
+import MessageSquareWarning from "lucide-react/dist/esm/icons/message-square-warning";
+import X from "lucide-react/dist/esm/icons/x";
+import XCircle from "lucide-react/dist/esm/icons/x-circle";
 import Markdown from "react-markdown";
 import { useState } from "react";
 
@@ -32,6 +29,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Dialog,
   DialogContent,
@@ -244,11 +242,7 @@ function PRActions({
 
   if (pr.state !== "open") {
     return (
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={openInGitHub}
-      >
+      <Button variant="outline" size="sm" onClick={openInGitHub}>
         <ExternalLink className="mr-1.5 size-4" />
         Open in GitHub
       </Button>
@@ -258,11 +252,7 @@ function PRActions({
   return (
     <div className="flex flex-wrap gap-2">
       {/* Open in GitHub */}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={openInGitHub}
-      >
+      <Button variant="outline" size="sm" onClick={openInGitHub}>
         <ExternalLink className="mr-1.5 size-4" />
         GitHub
       </Button>
@@ -277,7 +267,7 @@ function PRActions({
           className="border-green-500/30 text-green-500 hover:bg-green-500/10 hover:text-green-400"
         >
           {loadingAction === "approve" ? (
-            <Loader2 className="mr-1.5 size-4 animate-spin" />
+            <Spinner size="sm" className="mr-1.5" />
           ) : (
             <Check className="mr-1.5 size-4" />
           )}
@@ -299,43 +289,40 @@ function PRActions({
             }
           >
             {loadingAction === "changes" ? (
-              <Loader2 className="mr-1.5 size-4 animate-spin" />
+              <Spinner size="sm" className="mr-1.5" />
             ) : (
               <MessageSquareWarning className="mr-1.5 size-4" />
             )}
             Request Changes
           </DialogTrigger>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Request Changes</DialogTitle>
-            <DialogDescription>
-              Explain what changes are needed before this PR can be approved.
-            </DialogDescription>
-          </DialogHeader>
-          <Textarea
-            placeholder="Describe the changes you'd like to see..."
-            value={requestChangesComment}
-            onChange={(e) => setRequestChangesComment(e.target.value)}
-            rows={4}
-            className="resize-none"
-          />
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setRequestChangesOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleRequestChanges}
-              disabled={!requestChangesComment.trim()}
-              className="bg-yellow-600 text-white hover:bg-yellow-700"
-            >
-              <MessageSquareWarning className="mr-1.5 size-4" />
-              Request Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Request Changes</DialogTitle>
+              <DialogDescription>
+                Explain what changes are needed before this PR can be approved.
+              </DialogDescription>
+            </DialogHeader>
+            <Textarea
+              placeholder="Describe the changes you'd like to see..."
+              value={requestChangesComment}
+              onChange={(e) => setRequestChangesComment(e.target.value)}
+              rows={4}
+              className="resize-none"
+            />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRequestChangesOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleRequestChanges}
+                disabled={!requestChangesComment.trim()}
+                className="bg-yellow-600 text-white hover:bg-yellow-700"
+              >
+                <MessageSquareWarning className="mr-1.5 size-4" />
+                Request Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
         </Dialog>
       )}
 
@@ -347,7 +334,7 @@ function PRActions({
         className="bg-primary text-primary-foreground hover:bg-primary/90"
       >
         {loadingAction === "merge" ? (
-          <Loader2 className="mr-1.5 size-4 animate-spin" />
+          <Spinner size="sm" className="mr-1.5" />
         ) : (
           <GitMerge className="mr-1.5 size-4" />
         )}
@@ -367,7 +354,7 @@ function PRActions({
           }
         >
           {loadingAction === "close" ? (
-            <Loader2 className="mr-1.5 size-4 animate-spin" />
+            <Spinner size="sm" className="mr-1.5" />
           ) : (
             <X className="mr-1.5 size-4" />
           )}
@@ -380,8 +367,8 @@ function PRActions({
               Close Pull Request?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to close this pull request? This will mark
-              it as closed without merging. You can reopen it later if needed.
+              Are you sure you want to close this pull request? This will mark it as closed without
+              merging. You can reopen it later if needed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

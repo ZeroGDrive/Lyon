@@ -8,27 +8,37 @@ import type {
 } from "@/types";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import {
-  FileCode2,
-  FileMinus2,
-  FilePlus2,
-  FileSymlink,
-  Files,
-} from "lucide-react";
+import FileCode2 from "lucide-react/dist/esm/icons/file-code-2";
+import FileMinus2 from "lucide-react/dist/esm/icons/file-minus-2";
+import FilePlus2 from "lucide-react/dist/esm/icons/file-plus-2";
+import FileSymlink from "lucide-react/dist/esm/icons/file-symlink";
+import Files from "lucide-react/dist/esm/icons/files";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
-import { highlightLines, type HighlightedToken } from "@/lib/syntax-highlighter";
-import { LineCommentPopover } from "./line-comment-popover";
+import { highlightLinesWithCache, type HighlightedToken } from "@/lib/syntax-highlighter";
+import { LineGutter } from "./line-gutter";
 
 interface VirtualizedDiffProps {
   file: FileDiff;
   commentsByLine?: CommentsByLine;
-  onAddComment?: (filePath: string, lineNumber: number, side: "LEFT" | "RIGHT", body: string) => void;
+  onAddComment?: (
+    filePath: string,
+    lineNumber: number,
+    side: "LEFT" | "RIGHT",
+    body: string,
+  ) => void;
   scrollToLine?: number | null;
   hideHeader?: boolean;
   /** Render all lines without virtualization (for unified view with external scroll) */
   disableVirtualization?: boolean;
+  searchQuery?: string;
+  currentUser?: string | null;
+  onReplyComment?: (commentId: number, body: string) => void | Promise<void>;
+  onEditComment?: (commentId: number, body: string) => void | Promise<void>;
+  onDeleteComment?: (commentId: number) => void | Promise<void>;
+  onResolveThread?: (threadId: string) => void | Promise<void>;
+  onUnresolveThread?: (threadId: string) => void | Promise<void>;
 }
 
 interface FlattenedLine {
@@ -50,7 +60,21 @@ const statusConfig: Record<DiffStatus, { icon: React.ElementType; color: string;
 
 const LINE_HEIGHT = 24;
 
-function VirtualizedDiff({ file, commentsByLine, onAddComment, scrollToLine, hideHeader, disableVirtualization }: VirtualizedDiffProps) {
+function VirtualizedDiff({
+  file,
+  commentsByLine,
+  onAddComment,
+  scrollToLine,
+  hideHeader,
+  disableVirtualization,
+  searchQuery,
+  currentUser,
+  onReplyComment,
+  onEditComment,
+  onDeleteComment,
+  onResolveThread,
+  onUnresolveThread,
+}: VirtualizedDiffProps) {
   const { icon: StatusIcon, color: statusColor, label: statusLabel } = statusConfig[file.status];
   const parentRef = useRef<HTMLDivElement>(null);
   const [highlightedTokens, setHighlightedTokens] = useState<Map<string, HighlightedToken[]>>(
@@ -78,7 +102,7 @@ function VirtualizedDiff({ file, commentsByLine, onAddComment, scrollToLine, hid
 
     if (codeLines.length === 0) return;
 
-    highlightLines(codeLines, file.path).then((tokens) => {
+    highlightLinesWithCache(codeLines, file.path).then((tokens) => {
       const tokenMap = new Map<string, HighlightedToken[]>();
       let tokenIndex = 0;
       flattenedLines.forEach((f) => {
@@ -92,11 +116,13 @@ function VirtualizedDiff({ file, commentsByLine, onAddComment, scrollToLine, hid
     });
   }, [flattenedLines, file.path]);
 
+  const dynamicOverscan = flattenedLines.length > 500 ? 10 : 30;
+
   const virtualizer = useVirtualizer({
     count: flattenedLines.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => LINE_HEIGHT,
-    overscan: 30,
+    overscan: dynamicOverscan,
   });
 
   // Scroll to line when scrollToLine prop changes
@@ -107,7 +133,7 @@ function VirtualizedDiff({ file, commentsByLine, onAddComment, scrollToLine, hid
     const targetIndex = flattenedLines.findIndex(
       (item) =>
         item.type === "line" &&
-        (item.line.newLineNumber === scrollToLine || item.line.oldLineNumber === scrollToLine)
+        (item.line.newLineNumber === scrollToLine || item.line.oldLineNumber === scrollToLine),
     );
 
     if (targetIndex !== -1) {
@@ -204,6 +230,13 @@ function VirtualizedDiff({ file, commentsByLine, onAddComment, scrollToLine, hid
                     leftComments={getCommentsForLine(item.line.oldLineNumber ?? 0, "LEFT")}
                     rightComments={getCommentsForLine(item.line.newLineNumber ?? 0, "RIGHT")}
                     onAddComment={onAddComment ? handleAddComment : undefined}
+                    searchQuery={searchQuery}
+                    currentUser={currentUser}
+                    onReplyComment={onReplyComment}
+                    onEditComment={onEditComment}
+                    onDeleteComment={onDeleteComment}
+                    onResolveThread={onResolveThread}
+                    onUnresolveThread={onUnresolveThread}
                   />
                 )}
               </div>
@@ -211,10 +244,7 @@ function VirtualizedDiff({ file, commentsByLine, onAddComment, scrollToLine, hid
           })}
         </div>
       ) : (
-        <div
-          ref={parentRef}
-          className="flex-1 overflow-auto bg-background/30"
-        >
+        <div ref={parentRef} className="flex-1 overflow-auto bg-background/30">
           <div
             className="relative"
             style={{
@@ -257,6 +287,13 @@ function VirtualizedDiff({ file, commentsByLine, onAddComment, scrollToLine, hid
                       leftComments={getCommentsForLine(item.line.oldLineNumber ?? 0, "LEFT")}
                       rightComments={getCommentsForLine(item.line.newLineNumber ?? 0, "RIGHT")}
                       onAddComment={onAddComment ? handleAddComment : undefined}
+                      searchQuery={searchQuery}
+                      currentUser={currentUser}
+                      onReplyComment={onReplyComment}
+                      onEditComment={onEditComment}
+                      onDeleteComment={onDeleteComment}
+                      onResolveThread={onResolveThread}
+                      onUnresolveThread={onUnresolveThread}
                     />
                   )}
                 </div>
@@ -285,6 +322,13 @@ interface DiffLineRowProps {
   leftComments: LineComment[];
   rightComments: LineComment[];
   onAddComment?: (lineNumber: number, side: "LEFT" | "RIGHT", body: string) => void | Promise<void>;
+  searchQuery?: string;
+  currentUser?: string | null;
+  onReplyComment?: (commentId: number, body: string) => void | Promise<void>;
+  onEditComment?: (commentId: number, body: string) => void | Promise<void>;
+  onDeleteComment?: (commentId: number) => void | Promise<void>;
+  onResolveThread?: (threadId: string) => void | Promise<void>;
+  onUnresolveThread?: (threadId: string) => void | Promise<void>;
 }
 
 const DiffLineRow = memo(function DiffLineRow({
@@ -293,37 +337,65 @@ const DiffLineRow = memo(function DiffLineRow({
   leftComments,
   rightComments,
   onAddComment,
+  searchQuery,
+  currentUser,
+  onReplyComment,
+  onEditComment,
+  onDeleteComment,
+  onResolveThread,
+  onUnresolveThread,
 }: DiffLineRowProps) {
   const { type, content, oldLineNumber, newLineNumber } = line;
   const prefix = type === "addition" ? "+" : type === "deletion" ? "-" : " ";
+  const matchesQuery = Boolean(
+    searchQuery && content.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
 
   return (
-    <div className="flex h-6 items-stretch font-mono text-xs leading-6">
+    <div
+      className={cn(
+        "flex h-6 items-stretch font-mono text-xs leading-6",
+        matchesQuery && "bg-amber-500/15",
+      )}
+      data-line={newLineNumber ?? oldLineNumber ?? undefined}
+    >
       <div className="sticky left-0 z-20">
-        <LineCommentPopover
+        <LineGutter
           lineNumber={oldLineNumber}
           side="LEFT"
           comments={leftComments}
           onAddComment={
             onAddComment && oldLineNumber !== null
-              ? (body) => onAddComment(oldLineNumber, "LEFT", body)
+              ? (body: string) => onAddComment(oldLineNumber, "LEFT", body)
               : undefined
           }
           lineType={type === "deletion" ? "deletion" : "context"}
+          currentUser={currentUser}
+          onReply={onReplyComment}
+          onEditComment={onEditComment}
+          onDeleteComment={onDeleteComment}
+          onResolveThread={onResolveThread}
+          onUnresolveThread={onUnresolveThread}
         />
       </div>
 
       <div className="sticky left-12 z-20">
-        <LineCommentPopover
+        <LineGutter
           lineNumber={newLineNumber}
           side="RIGHT"
           comments={rightComments}
           onAddComment={
             onAddComment && newLineNumber !== null
-              ? (body) => onAddComment(newLineNumber, "RIGHT", body)
+              ? (body: string) => onAddComment(newLineNumber, "RIGHT", body)
               : undefined
           }
           lineType={type === "addition" ? "addition" : "context"}
+          currentUser={currentUser}
+          onReply={onReplyComment}
+          onEditComment={onEditComment}
+          onDeleteComment={onDeleteComment}
+          onResolveThread={onResolveThread}
+          onUnresolveThread={onUnresolveThread}
         />
       </div>
 

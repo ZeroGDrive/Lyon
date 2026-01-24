@@ -1,6 +1,9 @@
 import type { PullRequest, Repository } from "@/types";
 
-import { ChevronDown, ChevronRight, GitPullRequest, Trash2 } from "lucide-react";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
+import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
+import GitPullRequest from "lucide-react/dist/esm/icons/git-pull-request";
+import Trash2 from "lucide-react/dist/esm/icons/trash-2";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";

@@ -1,5 +1,17 @@
-import type { AIProvider, AIReviewConfig, AIReviewResult, CodexReasoningEffort, ReviewFocusArea } from "@/types";
-import { CODEX_REASONING_EFFORTS, DEFAULT_MODELS, DEFAULT_REASONING_EFFORT, DEFAULT_SYSTEM_PROMPTS, MODELS_BY_PROVIDER } from "@/types";
+import type {
+  AIProvider,
+  AIReviewConfig,
+  AIReviewResult,
+  CodexReasoningEffort,
+  ReviewFocusArea,
+} from "@/types";
+import {
+  CODEX_REASONING_EFFORTS,
+  DEFAULT_MODELS,
+  DEFAULT_REASONING_EFFORT,
+  DEFAULT_SYSTEM_PROMPTS,
+  MODELS_BY_PROVIDER,
+} from "@/types";
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -182,22 +194,32 @@ export const useReviewStore = create<ReviewState>()(
 
         // Fix config.model if invalid
         if (merged.config) {
-          const validModels = merged.config.provider === "claude" ? validClaudeModels : validCodexModels;
+          const validModels =
+            merged.config.provider === "claude" ? validClaudeModels : validCodexModels;
           if (!merged.config.model || !validModels.includes(merged.config.model)) {
             merged.config.model = DEFAULT_MODELS[merged.config.provider];
           }
           // Fix reasoning effort if invalid
-          if (!merged.config.reasoningEffort || !validReasoningEfforts.includes(merged.config.reasoningEffort)) {
+          if (
+            !merged.config.reasoningEffort ||
+            !validReasoningEfforts.includes(merged.config.reasoningEffort)
+          ) {
             merged.config.reasoningEffort = DEFAULT_REASONING_EFFORT;
           }
         }
 
         // Fix modelByProvider if invalid
         if (merged.modelByProvider) {
-          if (!merged.modelByProvider.claude || !validClaudeModels.includes(merged.modelByProvider.claude)) {
+          if (
+            !merged.modelByProvider.claude ||
+            !validClaudeModels.includes(merged.modelByProvider.claude)
+          ) {
             merged.modelByProvider.claude = DEFAULT_MODELS.claude;
           }
-          if (!merged.modelByProvider.codex || !validCodexModels.includes(merged.modelByProvider.codex)) {
+          if (
+            !merged.modelByProvider.codex ||
+            !validCodexModels.includes(merged.modelByProvider.codex)
+          ) {
             merged.modelByProvider.codex = DEFAULT_MODELS.codex;
           }
         }

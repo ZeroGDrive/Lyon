@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@lyon/env": "workspace:*",
+    "babel-plugin-react-compiler": "^1.0.0",
     "dotenv": "catalog:",
     "zod": "catalog:"
   },

@@ -1,9 +1,13 @@
-import { Brain, ChevronDown, ChevronRight, Loader2, Wrench } from "lucide-react";
+import Brain from "lucide-react/dist/esm/icons/brain";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
+import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
+import Wrench from "lucide-react/dist/esm/icons/wrench";
 import { memo, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { parseAIStreamOutput, type ThinkingBlock } from "@/lib/thinking-parser";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Spinner } from "@/components/ui/spinner";
 
 interface ThinkingStreamProps {
   output: string;
@@ -34,7 +38,7 @@ function ThinkingStream({ output, className }: ThinkingStreamProps) {
               className="flex items-center gap-1.5 rounded-full bg-glass-bg-subtle px-2.5 py-1 text-xs"
             >
               {tool.status === "running" ? (
-                <Loader2 className="size-3 animate-spin text-primary" />
+                <Spinner size="xs" className="size-3 text-primary" />
               ) : (
                 <Wrench className="size-3 text-muted-foreground" />
               )}
@@ -46,7 +50,7 @@ function ThinkingStream({ output, className }: ThinkingStreamProps) {
 
       {isThinking && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="size-3 animate-spin" />
+          <Spinner size="xs" />
           <span>Thinking...</span>
         </div>
       )}
@@ -89,7 +93,7 @@ const ThinkingBlockItem = memo(function ThinkingBlockItem({ block }: ThinkingBlo
         {block.isComplete ? (
           <Brain className="size-3.5 text-primary/70" />
         ) : (
-          <Loader2 className="size-3.5 animate-spin text-primary" />
+          <Spinner size="xs" className="size-3.5 text-primary" />
         )}
 
         <span className="flex-1 truncate font-medium text-foreground/80">{block.title}</span>

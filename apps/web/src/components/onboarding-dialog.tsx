@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  AlertCircle,
-  CheckCircle2,
-  ExternalLink,
-  Loader2,
-  RefreshCw,
-  Terminal,
-} from "lucide-react";
+import AlertCircle from "lucide-react/dist/esm/icons/circle-alert";
+import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2";
+import ExternalLink from "lucide-react/dist/esm/icons/external-link";
+import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
+import Terminal from "lucide-react/dist/esm/icons/terminal";
 
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Dialog,
   DialogContent,
@@ -65,7 +63,8 @@ export function OnboardingDialog({ open, onOpenChange, onComplete }: OnboardingD
             Welcome to Lyon
           </DialogTitle>
           <DialogDescription>
-            Lyon needs the GitHub CLI (gh) to be installed and authenticated to work with your repositories.
+            Lyon needs the GitHub CLI (gh) to be installed and authenticated to work with your
+            repositories.
           </DialogDescription>
         </DialogHeader>
 
@@ -123,11 +122,10 @@ export function OnboardingDialog({ open, onOpenChange, onComplete }: OnboardingD
               <p className="mb-3 text-sm text-muted-foreground">
                 Run this command in your terminal to authenticate:
               </p>
-              <div className="rounded bg-background/50 p-2 font-mono text-xs">
-                gh auth login
-              </div>
+              <div className="rounded bg-background/50 p-2 font-mono text-xs">gh auth login</div>
               <p className="mt-3 text-xs text-muted-foreground">
-                Follow the prompts to authenticate with your GitHub account. Make sure to grant access to your repositories.
+                Follow the prompts to authenticate with your GitHub account. Make sure to grant
+                access to your repositories.
               </p>
             </div>
           )}
@@ -138,7 +136,10 @@ export function OnboardingDialog({ open, onOpenChange, onComplete }: OnboardingD
               <h4 className="mb-1 font-medium text-green-500">You're all set!</h4>
               <p className="text-sm text-muted-foreground">
                 {status.username ? (
-                  <>Authenticated as <span className="font-medium text-foreground">{status.username}</span></>
+                  <>
+                    Authenticated as{" "}
+                    <span className="font-medium text-foreground">{status.username}</span>
+                  </>
                 ) : (
                   "GitHub CLI is installed and authenticated."
                 )}
@@ -148,20 +149,21 @@ export function OnboardingDialog({ open, onOpenChange, onComplete }: OnboardingD
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button
-            variant="outline"
-            onClick={checkStatus}
-            disabled={isChecking}
-          >
+          <Button variant="outline" onClick={checkStatus} disabled={isChecking}>
             {isChecking ? (
-              <Loader2 className="mr-2 size-4 animate-spin" />
+              <Spinner size="sm" className="mr-2" />
             ) : (
               <RefreshCw className="mr-2 size-4" />
             )}
             Check Again
           </Button>
           {status?.installed && status?.authenticated && (
-            <Button onClick={() => { onComplete(); onOpenChange(false); }}>
+            <Button
+              onClick={() => {
+                onComplete();
+                onOpenChange(false);
+              }}
+            >
               Get Started
             </Button>
           )}
@@ -182,7 +184,7 @@ function StatusItem({ label, status, isLoading, username }: StatusItemProps) {
   return (
     <div className="flex items-center gap-3">
       {isLoading ? (
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <Spinner className="text-muted-foreground" />
       ) : status === "success" ? (
         <CheckCircle2 className="size-5 text-green-500" />
       ) : status === "error" ? (

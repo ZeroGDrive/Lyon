@@ -1,5 +1,6 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
-import { CheckIcon, ChevronRightIcon } from "lucide-react";
+import CheckIcon from "lucide-react/dist/esm/icons/check";
+import ChevronRightIcon from "lucide-react/dist/esm/icons/chevron-right";
 import * as React from "react";
 
 import { cn } from "@/lib/utils";

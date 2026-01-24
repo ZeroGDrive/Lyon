@@ -38,7 +38,9 @@ export async function checkGhCliStatus(): Promise<GhCliStatus> {
       // If we get here, gh is authenticated
       // Try to get the username
       try {
-        const userResult = await invoke<string>("run_gh_command", { args: ["api", "user", "-q", ".login"] });
+        const userResult = await invoke<string>("run_gh_command", {
+          args: ["api", "user", "-q", ".login"],
+        });
         return { installed: true, authenticated: true, username: userResult.trim() };
       } catch {
         return { installed: true, authenticated: true };
@@ -578,7 +580,10 @@ async function runGhCommandWithInput<T>(args: string[], input: string): Promise<
   }
 }
 
-async function runGhGraphql<T>(query: string, variables: Record<string, unknown>): Promise<CommandResult<T>> {
+async function runGhGraphql<T>(
+  query: string,
+  variables: Record<string, unknown>,
+): Promise<CommandResult<T>> {
   const payload = JSON.stringify({ query, variables });
   const result = await runGhCommandWithInput<GraphqlResponse<T>>(
     ["api", "graphql", "--input", "-"],
@@ -650,13 +655,118 @@ export async function addReviewComment(
     side,
   });
 
-  return runGhCommandWithInput<Comment>([
+  return runGhCommandWithInput<Comment>(
+    [
+      "api",
+      "--method",
+      "POST",
+      "-H",
+      "Accept: application/vnd.github+json",
+      `repos/${repo}/pulls/${prNumber}/comments`,
+      "--input",
+      "-",
+    ],
+    payload,
+  );
+}
+
+export async function replyToReviewComment(
+  repo: string,
+  prNumber: number,
+  body: string,
+  inReplyToId: number,
+): Promise<CommandResult<Comment>> {
+  const payload = JSON.stringify({
+    body,
+    in_reply_to: inReplyToId,
+  });
+
+  return runGhCommandWithInput<Comment>(
+    [
+      "api",
+      "--method",
+      "POST",
+      "-H",
+      "Accept: application/vnd.github+json",
+      `repos/${repo}/pulls/${prNumber}/comments`,
+      "--input",
+      "-",
+    ],
+    payload,
+  );
+}
+
+export async function updateReviewComment(
+  repo: string,
+  commentId: number,
+  body: string,
+): Promise<CommandResult<Comment>> {
+  const payload = JSON.stringify({ body });
+  return runGhCommandWithInput<Comment>(
+    [
+      "api",
+      "--method",
+      "PATCH",
+      "-H",
+      "Accept: application/vnd.github+json",
+      `repos/${repo}/pulls/comments/${commentId}`,
+      "--input",
+      "-",
+    ],
+    payload,
+  );
+}
+
+export async function deleteReviewComment(
+  repo: string,
+  commentId: number,
+): Promise<CommandResult<void>> {
+  return runGhCommandVoid([
     "api",
-    "--method", "POST",
-    "-H", "Accept: application/vnd.github+json",
-    `repos/${repo}/pulls/${prNumber}/comments`,
-    "--input", "-",
-  ], payload);
+    "--method",
+    "DELETE",
+    "-H",
+    "Accept: application/vnd.github+json",
+    `repos/${repo}/pulls/comments/${commentId}`,
+  ]);
+}
+
+export async function resolveReviewThread(threadId: string): Promise<CommandResult<void>> {
+  const query = `
+    mutation($input: ResolveReviewThreadInput!) {
+      resolveReviewThread(input: $input) {
+        thread {
+          id
+          isResolved
+        }
+      }
+    }
+  `;
+
+  return runGhGraphql<void>(query, {
+    input: {
+      threadId,
+    },
+  });
+}
+
+export async function unresolveReviewThread(threadId: string): Promise<CommandResult<void>> {
+  const query = `
+    mutation($input: UnresolveReviewThreadInput!) {
+      unresolveReviewThread(input: $input) {
+        thread {
+          id
+          isResolved
+        }
+      }
+    }
+  `;
+
+  return runGhGraphql<void>(query, {
+    input: {
+      threadId,
+    },
+  });
 }
 
 // Pending review management
@@ -705,7 +815,7 @@ export async function getPendingReview(
 
   const currentUser = userResult.data.login;
   const pendingReview = reviewsResult.data?.find(
-    (r) => r.state === "PENDING" && r.user.login === currentUser
+    (r) => r.state === "PENDING" && r.user.login === currentUser,
   );
 
   if (!pendingReview) {
@@ -737,13 +847,19 @@ export async function submitPendingReview(
     body: body ?? "",
   });
 
-  return runGhCommandWithInput<void>([
-    "api",
-    "--method", "POST",
-    "-H", "Accept: application/vnd.github+json",
-    `repos/${repo}/pulls/${prNumber}/reviews/${reviewId}/events`,
-    "--input", "-",
-  ], payload);
+  return runGhCommandWithInput<void>(
+    [
+      "api",
+      "--method",
+      "POST",
+      "-H",
+      "Accept: application/vnd.github+json",
+      `repos/${repo}/pulls/${prNumber}/reviews/${reviewId}/events`,
+      "--input",
+      "-",
+    ],
+    payload,
+  );
 }
 
 export async function deletePendingReview(
@@ -753,14 +869,17 @@ export async function deletePendingReview(
 ): Promise<CommandResult<void>> {
   return runGhCommand<void>([
     "api",
-    "--method", "DELETE",
-    "-H", "Accept: application/vnd.github+json",
+    "--method",
+    "DELETE",
+    "-H",
+    "Accept: application/vnd.github+json",
     `repos/${repo}/pulls/${prNumber}/reviews/${reviewId}`,
   ]);
 }
 
 interface GhReviewComment {
   id: number | string;
+  comment_id?: number;
   body: string;
   path: string;
   line: number | null;
@@ -773,21 +892,15 @@ interface GhReviewComment {
   created_at: string;
   updated_at: string;
   in_reply_to_id?: number;
+  thread_id?: string;
+  thread_is_resolved?: boolean;
+  viewer_did_author?: boolean;
+  state?: "PENDING" | "SUBMITTED";
 }
 
-export async function getReviewComments(
-  repo: string,
-  prNumber: number,
-): Promise<CommandResult<GhReviewComment[]>> {
-  return runGhCommand<GhReviewComment[]>([
-    "api",
-    `repos/${repo}/pulls/${prNumber}/comments`,
-    "--paginate",
-  ]);
-}
-
-interface GhPendingReviewThreadComment {
+interface GhReviewThreadCommentNode {
   id: string;
+  databaseId: number | null;
   body: string;
   createdAt: string;
   updatedAt: string;
@@ -797,10 +910,141 @@ interface GhPendingReviewThreadComment {
     login: string;
     avatarUrl: string;
   } | null;
+  replyTo?: {
+    databaseId: number | null;
+  } | null;
+}
+
+interface GhReviewThreadNode {
+  id: string;
+  isResolved: boolean;
+  path: string;
+  line: number | null;
+  originalLine: number | null;
+  diffSide: "LEFT" | "RIGHT" | null;
+  startDiffSide: "LEFT" | "RIGHT" | null;
+  comments: {
+    nodes: GhReviewThreadCommentNode[];
+  };
+}
+
+export async function getReviewComments(
+  repo: string,
+  prNumber: number,
+): Promise<CommandResult<GhReviewComment[]>> {
+  const [owner, name] = repo.split("/");
+  const query = `
+    query($owner: String!, $name: String!, $number: Int!) {
+      repository(owner: $owner, name: $name) {
+        pullRequest(number: $number) {
+          reviewThreads(first: 100) {
+            nodes {
+              id
+              isResolved
+              path
+              line
+              originalLine
+              diffSide
+              startDiffSide
+              comments(first: 100) {
+                nodes {
+                  id
+                  databaseId
+                  body
+                  createdAt
+                  updatedAt
+                  state
+                  viewerDidAuthor
+                  replyTo {
+                    databaseId
+                  }
+                  author {
+                    login
+                    avatarUrl
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const result = await runGhGraphql<{
+    repository: {
+      pullRequest: {
+        reviewThreads: {
+          nodes: GhReviewThreadNode[];
+        };
+      } | null;
+    } | null;
+  }>(query, { owner, name, number: prNumber });
+
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+
+  if (!result.data) {
+    return { success: false, error: "Empty response from GitHub GraphQL API" };
+  }
+
+  const threads = result.data.repository?.pullRequest?.reviewThreads.nodes ?? [];
+  const mapped: GhReviewComment[] = [];
+
+  for (const thread of threads) {
+    const side = thread.diffSide ?? thread.startDiffSide ?? "RIGHT";
+    const line = thread.line ?? thread.originalLine;
+    if (!line || !thread.path) continue;
+
+    for (const comment of thread.comments.nodes) {
+      mapped.push({
+        id: comment.id,
+        comment_id: comment.databaseId ?? undefined,
+        body: comment.body,
+        path: thread.path,
+        line,
+        original_line: thread.originalLine,
+        side,
+        user: {
+          login: comment.author?.login ?? "unknown",
+          avatar_url: comment.author?.avatarUrl ?? "",
+        },
+        created_at: comment.createdAt,
+        updated_at: comment.updatedAt,
+        in_reply_to_id: comment.replyTo?.databaseId ?? undefined,
+        thread_id: thread.id,
+        thread_is_resolved: thread.isResolved,
+        viewer_did_author: comment.viewerDidAuthor,
+        state: comment.state,
+      });
+    }
+  }
+
+  return { success: true, data: mapped };
+}
+
+interface GhPendingReviewThreadComment {
+  id: string;
+  databaseId: number | null;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  state: "PENDING" | "SUBMITTED";
+  viewerDidAuthor: boolean;
+  replyTo?: {
+    databaseId: number | null;
+  } | null;
+  author: {
+    login: string;
+    avatarUrl: string;
+  } | null;
   pullRequestReview: { id: string } | null;
 }
 
 interface GhPendingReviewThread {
+  id: string;
+  isResolved: boolean;
   path: string;
   line: number | null;
   originalLine: number | null;
@@ -823,6 +1067,8 @@ export async function getPendingReviewComments(
         pullRequest(number: $number) {
           reviewThreads(first: 100) {
             nodes {
+              id
+              isResolved
               path
               line
               originalLine
@@ -831,11 +1077,15 @@ export async function getPendingReviewComments(
               comments(first: 100) {
                 nodes {
                   id
+                  databaseId
                   body
                   createdAt
                   updatedAt
                   state
                   viewerDidAuthor
+                  replyTo {
+                    databaseId
+                  }
                   author {
                     login
                     avatarUrl
@@ -866,6 +1116,10 @@ export async function getPendingReviewComments(
     return { success: false, error: result.error };
   }
 
+  if (!result.data) {
+    return { success: false, error: "Empty response from GitHub GraphQL API" };
+  }
+
   const threads = result.data.repository?.pullRequest?.reviewThreads.nodes ?? [];
   const mapped: GhReviewComment[] = [];
 
@@ -880,6 +1134,7 @@ export async function getPendingReviewComments(
       if (!belongsToReview && !isViewerDraft) continue;
       mapped.push({
         id: comment.id,
+        comment_id: comment.databaseId ?? undefined,
         body: comment.body,
         path: thread.path,
         line,
@@ -891,6 +1146,11 @@ export async function getPendingReviewComments(
         },
         created_at: comment.createdAt,
         updated_at: comment.updatedAt,
+        in_reply_to_id: comment.replyTo?.databaseId ?? undefined,
+        thread_id: thread.id,
+        thread_is_resolved: thread.isResolved,
+        viewer_did_author: comment.viewerDidAuthor,
+        state: comment.state,
       });
     }
   }
@@ -912,6 +1172,11 @@ export function convertToCommentsByLine(
 
     existing.push({
       id: String(comment.id),
+      commentId: comment.comment_id,
+      threadId: comment.thread_id,
+      threadResolved: comment.thread_is_resolved,
+      viewerDidAuthor: comment.viewer_did_author,
+      isPending: comment.state === "PENDING",
       path: comment.path,
       line: lineNumber,
       side: comment.side,
@@ -930,9 +1195,7 @@ export function convertToCommentsByLine(
   return commentsByLine;
 }
 
-export function convertReviewCommentsToComments(
-  comments: GhReviewComment[],
-): Comment[] {
+export function convertReviewCommentsToComments(comments: GhReviewComment[]): Comment[] {
   return comments.map((comment) => ({
     id: String(comment.id),
     author: {
@@ -946,6 +1209,7 @@ export function convertReviewCommentsToComments(
     url: "",
     path: comment.path,
     line: comment.line ?? comment.original_line ?? undefined,
+    inReplyToId: comment.in_reply_to_id ? String(comment.in_reply_to_id) : undefined,
   }));
 }
 
@@ -1091,12 +1355,10 @@ interface GhOrgResult {
   url: string;
 }
 
-export async function getUserOrganizations(): Promise<CommandResult<{ login: string; description: string | null }[]>> {
-  const result = await runGhCommand<GhOrgResult[]>([
-    "api",
-    "user/orgs",
-    "--paginate",
-  ]);
+export async function getUserOrganizations(): Promise<
+  CommandResult<{ login: string; description: string | null }[]>
+> {
+  const result = await runGhCommand<GhOrgResult[]>(["api", "user/orgs", "--paginate"]);
 
   if (result.success && result.data) {
     return {

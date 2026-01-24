@@ -2,6 +2,48 @@ import { createHighlighter, type Highlighter, type BundledLanguage } from "shiki
 
 let highlighterPromise: Promise<Highlighter> | null = null;
 
+// LRU Cache for syntax highlighting results
+const CACHE_MAX_SIZE = 50;
+
+interface CacheEntry {
+  tokens: HighlightedToken[][];
+  lastAccess: number;
+}
+
+const highlightCache = new Map<string, CacheEntry>();
+
+function getCacheKey(filePath: string, contentHash: string): string {
+  return `${filePath}:${contentHash}`;
+}
+
+function simpleHash(content: string): string {
+  // Fast hash for cache key - FNV-1a inspired
+  let hash = 2166136261;
+  for (let i = 0; i < content.length; i++) {
+    hash ^= content.charCodeAt(i);
+    hash = (hash * 16777619) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+function evictLRU(): void {
+  if (highlightCache.size < CACHE_MAX_SIZE) return;
+
+  let oldest: string | null = null;
+  let oldestTime = Infinity;
+
+  for (const [key, entry] of highlightCache) {
+    if (entry.lastAccess < oldestTime) {
+      oldestTime = entry.lastAccess;
+      oldest = key;
+    }
+  }
+
+  if (oldest) {
+    highlightCache.delete(oldest);
+  }
+}
+
 const LANGUAGE_MAP: Record<string, BundledLanguage> = {
   ts: "typescript",
   tsx: "tsx",
@@ -128,6 +170,39 @@ export async function highlightLines(
   } catch {
     return lines.map((line) => [{ content: line }]);
   }
+}
+
+/**
+ * Cached version of highlightLines with LRU eviction.
+ * Use this for repeated highlighting of the same file content.
+ */
+export async function highlightLinesWithCache(
+  lines: string[],
+  filePath: string,
+): Promise<HighlightedToken[][]> {
+  const content = lines.join("\n");
+  const contentHash = simpleHash(content);
+  const cacheKey = getCacheKey(filePath, contentHash);
+
+  const cached = highlightCache.get(cacheKey);
+  if (cached) {
+    cached.lastAccess = Date.now();
+    return cached.tokens;
+  }
+
+  const tokens = await highlightLines(lines, filePath);
+
+  evictLRU();
+  highlightCache.set(cacheKey, {
+    tokens,
+    lastAccess: Date.now(),
+  });
+
+  return tokens;
+}
+
+export function clearHighlightCache(): void {
+  highlightCache.clear();
 }
 
 export { getLanguageFromPath };

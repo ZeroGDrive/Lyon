@@ -1,16 +1,14 @@
 import type { Comment, PullRequest, PullRequestReview } from "@/types";
 
 import { formatDistanceToNow } from "date-fns";
-import {
-  CheckCircle,
-  Clock,
-  ExternalLink,
-  FileCode,
-  GitCommit,
-  GitPullRequest,
-  MessageCircle,
-  XCircle,
-} from "lucide-react";
+import CheckCircle from "lucide-react/dist/esm/icons/check-circle";
+import Clock from "lucide-react/dist/esm/icons/clock";
+import ExternalLink from "lucide-react/dist/esm/icons/external-link";
+import FileCode from "lucide-react/dist/esm/icons/file-code";
+import GitCommit from "lucide-react/dist/esm/icons/git-commit";
+import GitPullRequest from "lucide-react/dist/esm/icons/git-pull-request";
+import MessageCircle from "lucide-react/dist/esm/icons/message-circle";
+import XCircle from "lucide-react/dist/esm/icons/x-circle";
 import { memo, useMemo } from "react";
 import Markdown from "react-markdown";
 
@@ -87,12 +85,15 @@ function PRActivityTimeline({ pr, comments, className, onCommentClick }: PRActiv
     // Reviews
     for (const review of pr.reviews) {
       if (review.state === "PENDING") continue; // Skip pending reviews
+      const hasBody = Boolean(review.body && review.body.trim().length > 0);
+      // Inline-only reviews often create a COMMENTED review with no body; avoid duplicate timeline entries.
+      if (review.state === "COMMENTED" && !hasBody) continue;
       allEvents.push({
         id: `review-${review.id}`,
         type: "review",
         timestamp: review.submittedAt,
         author: review.author,
-        content: review.body,
+        content: hasBody ? review.body : null,
         reviewState: review.state,
       });
     }
@@ -136,8 +137,8 @@ function PRActivityTimeline({ pr, comments, className, onCommentClick }: PRActiv
     }
 
     // Sort by timestamp, newest first
-    return allEvents.sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    return allEvents.toSorted(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
     );
   }, [pr, comments]);
 
@@ -150,11 +151,7 @@ function PRActivityTimeline({ pr, comments, className, onCommentClick }: PRActiv
 
         <div className="space-y-4">
           {events.map((event) => (
-            <TimelineEventItem
-              key={event.id}
-              event={event}
-              onCommentClick={onCommentClick}
-            />
+            <TimelineEventItem key={event.id} event={event} onCommentClick={onCommentClick} />
           ))}
         </div>
       </div>
@@ -180,7 +177,7 @@ const TimelineEventItem = memo(function TimelineEventItem({
     <div
       className={cn(
         "absolute -left-10 flex size-7 items-center justify-center rounded-full bg-background",
-        bgColor
+        bgColor,
       )}
     >
       {children}
@@ -194,9 +191,8 @@ const TimelineEventItem = memo(function TimelineEventItem({
           <GitPullRequest className="size-3.5 text-primary" />
         </IconWrapper>
         <p className="text-xs text-muted-foreground pt-1">
-          <span className="font-medium text-foreground">{event.author.login}</span>{" "}
-          opened this pull request{" "}
-          <span className="text-muted-foreground/70">{timeAgo}</span>
+          <span className="font-medium text-foreground">{event.author.login}</span> opened this pull
+          request <span className="text-muted-foreground/70">{timeAgo}</span>
         </p>
       </div>
     );
@@ -241,8 +237,7 @@ const TimelineEventItem = memo(function TimelineEventItem({
         </IconWrapper>
         <div>
           <p className="text-xs text-muted-foreground pt-1">
-            <span className="font-medium text-foreground">{event.author.login}</span>{" "}
-            commented on{" "}
+            <span className="font-medium text-foreground">{event.author.login}</span> commented on{" "}
             {isClickable ? (
               <button
                 type="button"
@@ -253,7 +248,9 @@ const TimelineEventItem = memo(function TimelineEventItem({
                 <ExternalLink className="size-3" />
               </button>
             ) : (
-              <span className="font-mono text-blue-400">{fileName}:{event.line}</span>
+              <span className="font-mono text-blue-400">
+                {fileName}:{event.line}
+              </span>
             )}{" "}
             <span className="text-muted-foreground/70">{timeAgo}</span>
           </p>
@@ -261,7 +258,7 @@ const TimelineEventItem = memo(function TimelineEventItem({
             <div
               className={cn(
                 "mt-2 rounded-lg border border-glass-border-subtle bg-background/50 p-3",
-                isClickable && "cursor-pointer hover:border-blue-400/50 transition-colors"
+                isClickable && "cursor-pointer hover:border-blue-400/50 transition-colors",
               )}
               onClick={isClickable ? () => onCommentClick(event.path!, event.line!) : undefined}
             >

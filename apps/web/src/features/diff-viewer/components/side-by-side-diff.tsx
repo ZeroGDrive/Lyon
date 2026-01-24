@@ -1,15 +1,30 @@
 import type { CommentsByLine, DiffHunk, DiffLine, FileDiff, LineComment } from "@/types";
 
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
-import { highlightLines, type HighlightedToken } from "@/lib/syntax-highlighter";
-import { LineCommentPopover } from "./line-comment-popover";
+import { highlightLinesWithCache, type HighlightedToken } from "@/lib/syntax-highlighter";
+import { LineGutter } from "./line-gutter";
 
 interface SideBySideDiffProps {
   file: FileDiff;
   commentsByLine?: CommentsByLine;
-  onAddComment?: (filePath: string, lineNumber: number, side: "LEFT" | "RIGHT", body: string) => void;
+  onAddComment?: (
+    filePath: string,
+    lineNumber: number,
+    side: "LEFT" | "RIGHT",
+    body: string,
+  ) => void;
+  searchQuery?: string;
+  currentUser?: string | null;
+  onReplyComment?: (commentId: number, body: string) => void | Promise<void>;
+  onEditComment?: (commentId: number, body: string) => void | Promise<void>;
+  onDeleteComment?: (commentId: number) => void | Promise<void>;
+  onResolveThread?: (threadId: string) => void | Promise<void>;
+  onUnresolveThread?: (threadId: string) => void | Promise<void>;
+  scrollToLine?: number | null;
+  disableVirtualization?: boolean;
 }
 
 interface AlignedLine {
@@ -19,14 +34,10 @@ interface AlignedLine {
   hunkHeader?: string;
 }
 
-/**
- * Process hunks to create aligned left/right line pairs.
- */
 function alignHunkLines(hunks: DiffHunk[]): AlignedLine[] {
   const aligned: AlignedLine[] = [];
 
   for (const hunk of hunks) {
-    // Add hunk header
     aligned.push({
       left: null,
       right: null,
@@ -44,19 +55,16 @@ function alignHunkLines(hunks: DiffHunk[]): AlignedLine[] {
         aligned.push({ left: line, right: line });
         i++;
       } else if (line.type === "deletion") {
-        // Collect consecutive deletions
         const deletions: DiffLine[] = [];
         while (i < lines.length && lines[i].type === "deletion") {
           deletions.push(lines[i]);
           i++;
         }
-        // Collect consecutive additions
         const additions: DiffLine[] = [];
         while (i < lines.length && lines[i].type === "addition") {
           additions.push(lines[i]);
           i++;
         }
-        // Pair them up
         const maxLen = Math.max(deletions.length, additions.length);
         for (let j = 0; j < maxLen; j++) {
           aligned.push({
@@ -76,14 +84,37 @@ function alignHunkLines(hunks: DiffHunk[]): AlignedLine[] {
   return aligned;
 }
 
-function SideBySideDiff({ file, commentsByLine, onAddComment }: SideBySideDiffProps) {
+const LINE_HEIGHT = 24;
+
+function SideBySideDiff({
+  file,
+  commentsByLine,
+  onAddComment,
+  searchQuery,
+  currentUser,
+  onReplyComment,
+  onEditComment,
+  onDeleteComment,
+  onResolveThread,
+  onUnresolveThread,
+  scrollToLine,
+  disableVirtualization,
+}: SideBySideDiffProps) {
   const [highlightedTokens, setHighlightedTokens] = useState<Map<string, HighlightedToken[]>>(
-    new Map()
+    new Map(),
   );
-  const leftPanelRef = useRef<HTMLDivElement>(null);
-  const rightPanelRef = useRef<HTMLDivElement>(null);
+  const parentRef = useRef<HTMLDivElement>(null);
 
   const alignedLines = useMemo(() => alignHunkLines(file.hunks), [file.hunks]);
+
+  const dynamicOverscan = alignedLines.length > 500 ? 10 : 30;
+
+  const virtualizer = useVirtualizer({
+    count: alignedLines.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => LINE_HEIGHT,
+    overscan: dynamicOverscan,
+  });
 
   const getCommentsForLine = useCallback(
     (lineNumber: number, side: "LEFT" | "RIGHT"): LineComment[] => {
@@ -101,7 +132,6 @@ function SideBySideDiff({ file, commentsByLine, onAddComment }: SideBySideDiffPr
     [onAddComment, file.path],
   );
 
-  // Syntax highlighting
   useEffect(() => {
     const allLines: { content: string; key: string }[] = [];
 
@@ -116,17 +146,37 @@ function SideBySideDiff({ file, commentsByLine, onAddComment }: SideBySideDiffPr
 
     if (allLines.length === 0) return;
 
-    highlightLines(
+    highlightLinesWithCache(
       allLines.map((l) => l.content),
-      file.path
+      file.path,
     ).then((tokens) => {
       const map = new Map<string, HighlightedToken[]>();
       tokens.forEach((t, i) => {
-        map.set(allLines[i].key, t);
+        const lineInfo = allLines[i];
+        if (lineInfo) {
+          map.set(lineInfo.key, t);
+        }
       });
       setHighlightedTokens(map);
     });
   }, [alignedLines, file.path]);
+
+  useEffect(() => {
+    if (scrollToLine === null || scrollToLine === undefined) return;
+
+    const targetIndex = alignedLines.findIndex(
+      (item) =>
+        !item.isHunkHeader &&
+        (item.left?.newLineNumber === scrollToLine ||
+          item.left?.oldLineNumber === scrollToLine ||
+          item.right?.newLineNumber === scrollToLine ||
+          item.right?.oldLineNumber === scrollToLine),
+    );
+
+    if (targetIndex !== -1) {
+      virtualizer.scrollToIndex(targetIndex, { align: "center" });
+    }
+  }, [scrollToLine, alignedLines, virtualizer]);
 
   if (file.binary) {
     return (
@@ -136,53 +186,174 @@ function SideBySideDiff({ file, commentsByLine, onAddComment }: SideBySideDiffPr
     );
   }
 
-  return (
-    <div className="flex bg-background/30">
-      {/* Left panel (old/deletions) */}
-      <div
-        ref={leftPanelRef}
-        className="flex-1 overflow-x-auto border-r border-glass-border"
-      >
-        <div className="min-w-max">
-          {alignedLines.map((aligned, index) => (
-            <LeftLine
-              key={index}
-              aligned={aligned}
-              tokens={highlightedTokens.get(`left-${index}`)}
-              comments={aligned.left?.oldLineNumber ? getCommentsForLine(aligned.left.oldLineNumber, "LEFT") : []}
-              onAddComment={
-                onAddComment && aligned.left?.oldLineNumber
-                  ? (body) => handleAddComment(aligned.left!.oldLineNumber!, "LEFT", body)
-                  : undefined
-              }
-            />
-          ))}
+  if (alignedLines.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+        No changes to display
+      </div>
+    );
+  }
+
+  if (disableVirtualization) {
+    return (
+      <div className="flex bg-background/30">
+        <div className="w-1/2 min-w-0 overflow-hidden border-r border-glass-border">
+          <div className="min-w-max">
+            {alignedLines.map((aligned, index) => (
+              <LeftLine
+                key={`left-${index}`}
+                aligned={aligned}
+                tokens={highlightedTokens.get(`left-${index}`)}
+                comments={
+                  aligned.left?.oldLineNumber
+                    ? getCommentsForLine(aligned.left.oldLineNumber, "LEFT")
+                    : []
+                }
+                onAddComment={
+                  onAddComment && aligned.left?.oldLineNumber
+                    ? (body) => handleAddComment(aligned.left!.oldLineNumber!, "LEFT", body)
+                    : undefined
+                }
+                searchQuery={searchQuery}
+                currentUser={currentUser}
+                onReplyComment={onReplyComment}
+                onEditComment={onEditComment}
+                onDeleteComment={onDeleteComment}
+                onResolveThread={onResolveThread}
+                onUnresolveThread={onUnresolveThread}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="w-1/2 min-w-0 overflow-hidden">
+          <div className="min-w-max">
+            {alignedLines.map((aligned, index) => (
+              <RightLine
+                key={`right-${index}`}
+                aligned={aligned}
+                tokens={
+                  aligned.left === aligned.right
+                    ? highlightedTokens.get(`left-${index}`)
+                    : highlightedTokens.get(`right-${index}`)
+                }
+                comments={
+                  aligned.right?.newLineNumber
+                    ? getCommentsForLine(aligned.right.newLineNumber, "RIGHT")
+                    : []
+                }
+                onAddComment={
+                  onAddComment && aligned.right?.newLineNumber
+                    ? (body) => handleAddComment(aligned.right!.newLineNumber!, "RIGHT", body)
+                    : undefined
+                }
+                searchQuery={searchQuery}
+                currentUser={currentUser}
+                onReplyComment={onReplyComment}
+                onEditComment={onEditComment}
+                onDeleteComment={onDeleteComment}
+                onResolveThread={onResolveThread}
+                onUnresolveThread={onUnresolveThread}
+              />
+            ))}
+          </div>
         </div>
       </div>
+    );
+  }
 
-      {/* Right panel (new/additions) */}
-      <div
-        ref={rightPanelRef}
-        className="flex-1 overflow-x-auto"
-      >
-        <div className="min-w-max">
-          {alignedLines.map((aligned, index) => (
-            <RightLine
-              key={index}
-              aligned={aligned}
-              tokens={
-                aligned.left === aligned.right
-                  ? highlightedTokens.get(`left-${index}`)
-                  : highlightedTokens.get(`right-${index}`)
-              }
-              comments={aligned.right?.newLineNumber ? getCommentsForLine(aligned.right.newLineNumber, "RIGHT") : []}
-              onAddComment={
-                onAddComment && aligned.right?.newLineNumber
-                  ? (body) => handleAddComment(aligned.right!.newLineNumber!, "RIGHT", body)
-                  : undefined
-              }
-            />
-          ))}
+  const totalHeight = virtualizer.getTotalSize();
+
+  return (
+    <div ref={parentRef} className="h-full overflow-y-auto bg-background/30">
+      <div className="flex" style={{ height: totalHeight }}>
+        <div className="relative w-1/2 overflow-hidden border-r border-glass-border">
+          <div className="min-w-max" style={{ height: totalHeight }}>
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const aligned = alignedLines[virtualRow.index];
+              if (!aligned) return null;
+
+              return (
+                <div
+                  key={`left-${virtualRow.key}`}
+                  className="absolute inset-x-0"
+                  style={{
+                    top: 0,
+                    height: virtualRow.size,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <LeftLine
+                    aligned={aligned}
+                    tokens={highlightedTokens.get(`left-${virtualRow.index}`)}
+                    comments={
+                      aligned.left?.oldLineNumber
+                        ? getCommentsForLine(aligned.left.oldLineNumber, "LEFT")
+                        : []
+                    }
+                    onAddComment={
+                      onAddComment && aligned.left?.oldLineNumber
+                        ? (body) => handleAddComment(aligned.left!.oldLineNumber!, "LEFT", body)
+                        : undefined
+                    }
+                    searchQuery={searchQuery}
+                    currentUser={currentUser}
+                    onReplyComment={onReplyComment}
+                    onEditComment={onEditComment}
+                    onDeleteComment={onDeleteComment}
+                    onResolveThread={onResolveThread}
+                    onUnresolveThread={onUnresolveThread}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="relative w-1/2 overflow-hidden">
+          <div className="min-w-max" style={{ height: totalHeight }}>
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const aligned = alignedLines[virtualRow.index];
+              if (!aligned) return null;
+
+              return (
+                <div
+                  key={`right-${virtualRow.key}`}
+                  className="absolute inset-x-0"
+                  style={{
+                    top: 0,
+                    height: virtualRow.size,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <RightLine
+                    aligned={aligned}
+                    tokens={
+                      aligned.left === aligned.right
+                        ? highlightedTokens.get(`left-${virtualRow.index}`)
+                        : highlightedTokens.get(`right-${virtualRow.index}`)
+                    }
+                    comments={
+                      aligned.right?.newLineNumber
+                        ? getCommentsForLine(aligned.right.newLineNumber, "RIGHT")
+                        : []
+                    }
+                    onAddComment={
+                      onAddComment && aligned.right?.newLineNumber
+                        ? (body) => handleAddComment(aligned.right!.newLineNumber!, "RIGHT", body)
+                        : undefined
+                    }
+                    searchQuery={searchQuery}
+                    currentUser={currentUser}
+                    onReplyComment={onReplyComment}
+                    onEditComment={onEditComment}
+                    onDeleteComment={onDeleteComment}
+                    onResolveThread={onResolveThread}
+                    onUnresolveThread={onUnresolveThread}
+                  />
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
@@ -194,11 +365,25 @@ const LeftLine = memo(function LeftLine({
   tokens,
   comments,
   onAddComment,
+  searchQuery,
+  currentUser,
+  onReplyComment,
+  onEditComment,
+  onDeleteComment,
+  onResolveThread,
+  onUnresolveThread,
 }: {
   aligned: AlignedLine;
   tokens?: HighlightedToken[];
   comments: LineComment[];
   onAddComment?: (body: string) => void;
+  searchQuery?: string;
+  currentUser?: string | null;
+  onReplyComment?: (commentId: number, body: string) => void | Promise<void>;
+  onEditComment?: (commentId: number, body: string) => void | Promise<void>;
+  onDeleteComment?: (commentId: number) => void | Promise<void>;
+  onResolveThread?: (threadId: string) => void | Promise<void>;
+  onUnresolveThread?: (threadId: string) => void | Promise<void>;
 }) {
   if (aligned.isHunkHeader) {
     return (
@@ -218,26 +403,37 @@ const LeftLine = memo(function LeftLine({
 
   const isDeletion = line.type === "deletion";
 
+  const matchesQuery = Boolean(
+    searchQuery && line.content.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+
   return (
     <div
       className={cn(
         "flex h-6 font-mono text-xs",
-        isDeletion && "bg-red-500/10"
+        isDeletion && "bg-red-500/10",
+        matchesQuery && "bg-amber-500/15",
       )}
       data-line={line.oldLineNumber}
     >
-      <LineCommentPopover
+      <LineGutter
         lineNumber={line.oldLineNumber}
         side="LEFT"
         comments={comments}
         onAddComment={onAddComment}
         lineType={isDeletion ? "deletion" : "context"}
+        currentUser={currentUser}
+        onReply={onReplyComment}
+        onEditComment={onEditComment}
+        onDeleteComment={onDeleteComment}
+        onResolveThread={onResolveThread}
+        onUnresolveThread={onUnresolveThread}
       />
       <div className="whitespace-pre pl-3 pr-4 leading-6">
         <span
           className={cn(
             "select-none mr-1",
-            isDeletion ? "text-red-400" : "text-muted-foreground/40"
+            isDeletion ? "text-red-400" : "text-muted-foreground/40",
           )}
         >
           {isDeletion ? "-" : " "}
@@ -253,11 +449,25 @@ const RightLine = memo(function RightLine({
   tokens,
   comments,
   onAddComment,
+  searchQuery,
+  currentUser,
+  onReplyComment,
+  onEditComment,
+  onDeleteComment,
+  onResolveThread,
+  onUnresolveThread,
 }: {
   aligned: AlignedLine;
   tokens?: HighlightedToken[];
   comments: LineComment[];
   onAddComment?: (body: string) => void;
+  searchQuery?: string;
+  currentUser?: string | null;
+  onReplyComment?: (commentId: number, body: string) => void | Promise<void>;
+  onEditComment?: (commentId: number, body: string) => void | Promise<void>;
+  onDeleteComment?: (commentId: number) => void | Promise<void>;
+  onResolveThread?: (threadId: string) => void | Promise<void>;
+  onUnresolveThread?: (threadId: string) => void | Promise<void>;
 }) {
   if (aligned.isHunkHeader) {
     return (
@@ -277,26 +487,37 @@ const RightLine = memo(function RightLine({
 
   const isAddition = line.type === "addition";
 
+  const matchesQuery = Boolean(
+    searchQuery && line.content.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+
   return (
     <div
       className={cn(
         "flex h-6 font-mono text-xs",
-        isAddition && "bg-green-500/10"
+        isAddition && "bg-green-500/10",
+        matchesQuery && "bg-amber-500/15",
       )}
       data-line={line.newLineNumber}
     >
-      <LineCommentPopover
+      <LineGutter
         lineNumber={line.newLineNumber}
         side="RIGHT"
         comments={comments}
         onAddComment={onAddComment}
         lineType={isAddition ? "addition" : "context"}
+        currentUser={currentUser}
+        onReply={onReplyComment}
+        onEditComment={onEditComment}
+        onDeleteComment={onDeleteComment}
+        onResolveThread={onResolveThread}
+        onUnresolveThread={onUnresolveThread}
       />
       <div className="whitespace-pre pl-3 pr-4 leading-6">
         <span
           className={cn(
             "select-none mr-1",
-            isAddition ? "text-green-400" : "text-muted-foreground/40"
+            isAddition ? "text-green-400" : "text-muted-foreground/40",
           )}
         >
           {isAddition ? "+" : " "}

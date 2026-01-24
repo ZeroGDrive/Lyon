@@ -1,6 +1,9 @@
 import type { PullRequest } from "@/types";
 
-import { GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft } from "lucide-react";
+import GitMerge from "lucide-react/dist/esm/icons/git-merge";
+import GitPullRequest from "lucide-react/dist/esm/icons/git-pull-request";
+import GitPullRequestClosed from "lucide-react/dist/esm/icons/git-pull-request-closed";
+import GitPullRequestDraft from "lucide-react/dist/esm/icons/git-pull-request-draft";
 
 import { cn } from "@/lib/utils";
 

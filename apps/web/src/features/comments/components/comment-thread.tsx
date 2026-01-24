@@ -1,7 +1,7 @@
 import type { Comment } from "@/types";
 
 import { formatDistanceToNow } from "date-fns";
-import { Bot } from "lucide-react";
+import Bot from "lucide-react/dist/esm/icons/bot";
 
 import { cn } from "@/lib/utils";
 

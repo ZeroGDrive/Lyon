@@ -1,4 +1,4 @@
-import { Send } from "lucide-react";
+import Send from "lucide-react/dist/esm/icons/send";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";

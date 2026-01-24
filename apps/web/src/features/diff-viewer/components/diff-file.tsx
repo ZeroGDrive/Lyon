@@ -1,6 +1,10 @@
 import type { CommentsByLine, DiffStatus, FileDiff as FileDiffType } from "@/types";
 
-import { FileCode2, FileMinus2, FilePlus2, FileSymlink, Files } from "lucide-react";
+import FileCode2 from "lucide-react/dist/esm/icons/file-code-2";
+import FileMinus2 from "lucide-react/dist/esm/icons/file-minus-2";
+import FilePlus2 from "lucide-react/dist/esm/icons/file-plus-2";
+import FileSymlink from "lucide-react/dist/esm/icons/file-symlink";
+import Files from "lucide-react/dist/esm/icons/files";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";

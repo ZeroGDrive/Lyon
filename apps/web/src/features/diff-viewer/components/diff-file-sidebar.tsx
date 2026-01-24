@@ -1,8 +1,18 @@
 import type { CommentsByLine, DiffStatus, FileDiff } from "@/types";
 
-import { ChevronDown, ChevronRight, FileCode2, FileMinus2, FilePlus2, Files, FileSymlink, Folder, MessageSquare } from "lucide-react";
-import { memo, useCallback, useMemo, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
+import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
+import FileCode2 from "lucide-react/dist/esm/icons/file-code-2";
+import FileMinus2 from "lucide-react/dist/esm/icons/file-minus-2";
+import FilePlus2 from "lucide-react/dist/esm/icons/file-plus-2";
+import Files from "lucide-react/dist/esm/icons/files";
+import FileSymlink from "lucide-react/dist/esm/icons/file-symlink";
+import Folder from "lucide-react/dist/esm/icons/folder";
+import MessageSquare from "lucide-react/dist/esm/icons/message-square";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 interface DiffFileSidebarProps {
@@ -35,6 +45,18 @@ interface TreeNode {
   children: Map<string, TreeNode>;
   file?: FileDiff;
 }
+
+interface FlatRow {
+  key: string;
+  depth: number;
+  type: "folder" | "file";
+  name: string;
+  path: string;
+  isExpanded?: boolean;
+  file?: FileDiff;
+}
+
+const ROW_HEIGHT = 28;
 
 function buildFileTree(files: FileDiff[]): TreeNode {
   const root: TreeNode = {
@@ -71,13 +93,42 @@ function buildFileTree(files: FileDiff[]): TreeNode {
 }
 
 function sortTreeNodes(nodes: TreeNode[]): TreeNode[] {
-  return nodes.sort((a, b) => {
+  return nodes.toSorted((a, b) => {
     // Folders first
     if (a.isFolder && !b.isFolder) return -1;
     if (!a.isFolder && b.isFolder) return 1;
     // Alphabetical within same type
     return a.name.localeCompare(b.name);
   });
+}
+
+function flattenTree(root: TreeNode, expandedFolders: Set<string>): FlatRow[] {
+  const rows: FlatRow[] = [];
+
+  function traverse(node: TreeNode, depth: number) {
+    if (node.path) {
+      // Skip root
+      rows.push({
+        key: node.path,
+        depth,
+        type: node.isFolder ? "folder" : "file",
+        name: node.name,
+        path: node.path,
+        isExpanded: node.isFolder ? expandedFolders.has(node.path) : undefined,
+        file: node.file,
+      });
+    }
+
+    if (node.isFolder && (node.path === "" || expandedFolders.has(node.path))) {
+      const children = sortTreeNodes(Array.from(node.children.values()));
+      for (const child of children) {
+        traverse(child, node.path ? depth + 1 : 0);
+      }
+    }
+  }
+
+  traverse(root, 0);
+  return rows;
 }
 
 function getCommentCountForFile(path: string, commentsByLine?: CommentsByLine): number {
@@ -91,8 +142,15 @@ function getCommentCountForFile(path: string, commentsByLine?: CommentsByLine): 
   return count;
 }
 
-function DiffFileSidebar({ files, selectedFile, onSelectFile, commentsByLine }: DiffFileSidebarProps) {
+function DiffFileSidebar({
+  files,
+  selectedFile,
+  onSelectFile,
+  commentsByLine,
+}: DiffFileSidebarProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
   const tree = useMemo(() => buildFileTree(files), [files]);
+
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => {
     // Initially expand all folders
     const expanded = new Set<string>();
@@ -108,17 +166,52 @@ function DiffFileSidebar({ files, selectedFile, onSelectFile, commentsByLine }: 
     return expanded;
   });
 
+  // Loading state for file selection
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+
+  // Loading state for folder toggle
+  const [, startFolderTransition] = useTransition();
+
+  const handleSelectFile = useCallback(
+    (path: string) => {
+      setPendingPath(path);
+      startTransition(() => {
+        onSelectFile(path);
+      });
+    },
+    [onSelectFile],
+  );
+
+  // Clear pendingPath when selection matches
+  useEffect(() => {
+    if (selectedFile === pendingPath) {
+      setPendingPath(null);
+    }
+  }, [selectedFile, pendingPath]);
+
   const toggleFolder = useCallback((path: string) => {
-    setExpandedFolders((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
+    startFolderTransition(() => {
+      setExpandedFolders((prev) => {
+        const next = new Set(prev);
+        if (next.has(path)) {
+          next.delete(path);
+        } else {
+          next.add(path);
+        }
+        return next;
+      });
     });
   }, []);
+
+  const flatRows = useMemo(() => flattenTree(tree, expandedFolders), [tree, expandedFolders]);
+
+  const virtualizer = useVirtualizer({
+    count: flatRows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 10,
+  });
 
   return (
     <div className="flex h-full w-64 shrink-0 flex-col border-r border-glass-border bg-glass-bg">
@@ -127,88 +220,86 @@ function DiffFileSidebar({ files, selectedFile, onSelectFile, commentsByLine }: 
           Changed Files ({files.length})
         </h3>
       </div>
-      <div className="flex-1 overflow-auto">
-        <div className="min-w-max py-1">
-          {sortTreeNodes(Array.from(tree.children.values())).map((node) => (
-            <TreeNodeItem
-              key={node.path}
-              node={node}
-              depth={0}
-              selectedFile={selectedFile}
-              expandedFolders={expandedFolders}
-              onSelectFile={onSelectFile}
-              onToggleFolder={toggleFolder}
-              commentsByLine={commentsByLine}
-            />
-          ))}
+      <div ref={scrollRef} className="flex-1 overflow-auto">
+        <div
+          className="relative min-w-max"
+          style={{ height: virtualizer.getTotalSize() }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const row = flatRows[virtualRow.index];
+            if (!row) return null;
+
+            return (
+              <VirtualRow
+                key={row.key}
+                row={row}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: ROW_HEIGHT,
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+                selectedFile={selectedFile}
+                pendingPath={pendingPath}
+                onSelectFile={handleSelectFile}
+                onToggleFolder={toggleFolder}
+                commentsByLine={commentsByLine}
+              />
+            );
+          })}
         </div>
       </div>
     </div>
   );
 }
 
-interface TreeNodeItemProps {
-  node: TreeNode;
-  depth: number;
+interface VirtualRowProps {
+  row: FlatRow;
+  style: React.CSSProperties;
   selectedFile: string | null;
-  expandedFolders: Set<string>;
+  pendingPath: string | null;
   onSelectFile: (path: string) => void;
   onToggleFolder: (path: string) => void;
   commentsByLine?: CommentsByLine;
 }
 
-const TreeNodeItem = memo(function TreeNodeItem({
-  node,
-  depth,
+const VirtualRow = memo(function VirtualRow({
+  row,
+  style,
   selectedFile,
-  expandedFolders,
+  pendingPath,
   onSelectFile,
   onToggleFolder,
   commentsByLine,
-}: TreeNodeItemProps) {
-  const isExpanded = expandedFolders.has(node.path);
-  const paddingLeft = 8 + depth * 16;
+}: VirtualRowProps) {
+  const paddingLeft = 8 + row.depth * 16;
 
-  if (node.isFolder) {
-    const children = sortTreeNodes(Array.from(node.children.values()));
-
+  if (row.type === "folder") {
     return (
-      <>
-        <button
-          type="button"
-          onClick={() => onToggleFolder(node.path)}
-          className="flex w-full items-center gap-1.5 py-1 text-left text-xs transition-colors hover:bg-glass-highlight"
-          style={{ paddingLeft }}
-        >
-          {isExpanded ? (
-            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-          )}
-          <Folder className="size-3.5 shrink-0 text-muted-foreground" />
-          <span className="truncate font-mono text-foreground/80">{node.name}</span>
-        </button>
-        {isExpanded &&
-          children.map((child) => (
-            <TreeNodeItem
-              key={child.path}
-              node={child}
-              depth={depth + 1}
-              selectedFile={selectedFile}
-              expandedFolders={expandedFolders}
-              onSelectFile={onSelectFile}
-              onToggleFolder={onToggleFolder}
-              commentsByLine={commentsByLine}
-            />
-          ))}
-      </>
+      <button
+        type="button"
+        onClick={() => onToggleFolder(row.path)}
+        className="flex w-full items-center gap-1.5 text-left text-xs transition-colors hover:bg-glass-highlight"
+        style={{ ...style, paddingLeft, paddingTop: 4, paddingBottom: 4 }}
+      >
+        {row.isExpanded ? (
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+        )}
+        <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="truncate font-mono text-foreground/80">{row.name}</span>
+      </button>
     );
   }
 
-  // File node
-  const file = node.file!;
+  // File row
+  const file = row.file!;
   const Icon = statusIcons[file.status];
   const isSelected = selectedFile === file.path;
+  const isPending = pendingPath === file.path;
   const commentCount = getCommentCountForFile(file.path, commentsByLine);
 
   return (
@@ -216,14 +307,18 @@ const TreeNodeItem = memo(function TreeNodeItem({
       type="button"
       onClick={() => onSelectFile(file.path)}
       className={cn(
-        "flex w-full items-center gap-1.5 py-1 text-left text-xs",
+        "flex w-full items-center gap-1.5 text-left text-xs",
         "transition-colors hover:bg-glass-highlight",
         isSelected && "bg-primary/10 border-l-2 border-primary",
       )}
-      style={{ paddingLeft: paddingLeft + 20 }}
+      style={{ ...style, paddingLeft: paddingLeft + 20, paddingTop: 4, paddingBottom: 4 }}
     >
-      <Icon className={cn("size-3.5 shrink-0", statusColors[file.status])} />
-      <span className="min-w-0 flex-1 truncate font-mono text-foreground/80">{node.name}</span>
+      {isPending ? (
+        <Spinner size="xs" className="shrink-0 text-primary" />
+      ) : (
+        <Icon className={cn("size-3.5 shrink-0", statusColors[file.status])} />
+      )}
+      <span className="min-w-0 flex-1 truncate font-mono text-foreground/80">{row.name}</span>
       <div className="flex shrink-0 items-center gap-1.5 pr-2 text-[10px] font-medium">
         {commentCount > 0 && (
           <span className="flex items-center gap-0.5 text-primary">

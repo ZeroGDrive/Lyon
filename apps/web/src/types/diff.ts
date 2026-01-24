@@ -41,6 +41,11 @@ export interface ParsedDiff {
 
 export interface LineComment {
   id: string;
+  commentId?: number;
+  threadId?: string;
+  threadResolved?: boolean;
+  viewerDidAuthor?: boolean;
+  isPending?: boolean;
   path: string;
   line: number;
   side: "LEFT" | "RIGHT";

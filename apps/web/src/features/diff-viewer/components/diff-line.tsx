@@ -1,6 +1,6 @@
 import type { DiffLine as DiffLineType, LineComment, LineType } from "@/types";
 
-import { MessageSquarePlus } from "lucide-react";
+import MessageSquarePlus from "lucide-react/dist/esm/icons/message-square-plus";
 
 import { cn } from "@/lib/utils";
 
