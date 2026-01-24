@@ -26,8 +26,8 @@
       "csp": null
     },
     "trayIcon": {
-      "iconPath": "icons/tray-icon@2x.png",
-      "iconAsTemplate": false
+      "iconPath": "icons/tray-template@2x.png",
+      "iconAsTemplate": true
     }
   },
   "bundle": {
