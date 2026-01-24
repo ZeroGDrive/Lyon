@@ -9,6 +9,70 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex;
 
+/// Get enhanced PATH for finding CLI tools like gh, git, etc.
+/// macOS GUI apps launched from Finder don't inherit shell PATH, so we need to add common paths.
+/// Windows GUI apps usually inherit PATH, but we add common locations as fallback.
+fn get_enhanced_path() -> String {
+    let current_path = std::env::var("PATH").unwrap_or_default();
+
+    #[cfg(target_os = "macos")]
+    {
+        // Common paths for Homebrew and other package managers on macOS
+        let additional_paths = [
+            "/opt/homebrew/bin",      // Apple Silicon Homebrew
+            "/usr/local/bin",         // Intel Homebrew / general
+            "/opt/homebrew/sbin",
+            "/usr/local/sbin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin",
+        ];
+
+        let mut paths: Vec<&str> = additional_paths.to_vec();
+        if !current_path.is_empty() {
+            paths.push(&current_path);
+        }
+        paths.join(":")
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Common paths for CLI tools on Windows
+        let mut paths = vec![current_path.clone()];
+
+        // GitHub CLI default install location
+        if let Ok(program_files) = std::env::var("ProgramFiles") {
+            paths.push(format!("{}\\GitHub CLI", program_files));
+        }
+
+        // User-specific installs via scoop or other package managers
+        if let Ok(user_profile) = std::env::var("USERPROFILE") {
+            paths.push(format!("{}\\scoop\\shims", user_profile));
+            paths.push(format!("{}\\AppData\\Local\\GitHub CLI", user_profile));
+        }
+
+        paths.join(";")
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        // Linux and others - add common paths
+        let additional_paths = [
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/snap/bin",  // Snap packages on Ubuntu
+        ];
+
+        let mut paths: Vec<&str> = additional_paths.to_vec();
+        if !current_path.is_empty() {
+            paths.push(&current_path);
+        }
+        paths.join(":")
+    }
+}
+
 #[derive(Clone, Deserialize)]
 struct TrayPRInfo {
     number: i32,
@@ -55,6 +119,7 @@ async fn run_gh_command(args: Vec<String>) -> Result<String, String> {
     spawn_blocking(move || {
         let output = std::process::Command::new("gh")
             .args(&args)
+            .env("PATH", get_enhanced_path())
             .output()
             .map_err(|e| format!("Failed to execute gh command: {}", e))?;
 
@@ -75,6 +140,7 @@ async fn run_gh_command_with_input(args: Vec<String>, input: String) -> Result<S
     spawn_blocking(move || {
         let mut child = std::process::Command::new("gh")
             .args(&args)
+            .env("PATH", get_enhanced_path())
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -112,6 +178,7 @@ async fn run_shell_command(command: String, args: Vec<String>) -> Result<String,
     spawn_blocking(move || {
         let output = std::process::Command::new(&command)
             .args(&args)
+            .env("PATH", get_enhanced_path())
             .output()
             .map_err(|e| format!("Failed to execute command: {}", e))?;
 
@@ -140,6 +207,7 @@ async fn start_ai_stream(
 
     let mut child = TokioCommand::new(&command)
         .args(&args)
+        .env("PATH", get_enhanced_path())
         .stdin(if stdin_input.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
