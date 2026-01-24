@@ -1,4 +1,6 @@
 import { useEffect, useRef } from "react";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -16,43 +18,15 @@ export function UpdateChecker() {
   useEffect(() => {
     async function checkAndDownload() {
       try {
-        console.log("[Updater] Checking for updates...");
-        const { check } = await import("@tauri-apps/plugin-updater");
         const update = await check();
-
-        if (!update) {
-          console.log("[Updater] No update available");
-          return;
-        }
-
-        console.log("[Updater] Update available:", update.version);
+        if (!update) return;
 
         // Check if user dismissed this version
         const dismissedVersion = localStorage.getItem(DISMISSED_VERSION_KEY);
-        if (dismissedVersion === update.version) {
-          console.log("[Updater] Version dismissed by user");
-          return;
-        }
+        if (dismissedVersion === update.version) return;
 
-        // Download the update (don't install yet)
-        console.log("[Updater] Downloading update...");
-        let downloadedBytes = 0;
-        let totalBytes = 0;
-
-        await update.download((progress) => {
-          if (progress.event === "Started" && progress.data.contentLength) {
-            totalBytes = progress.data.contentLength;
-            console.log(`[Updater] Download started, total size: ${totalBytes} bytes`);
-          } else if (progress.event === "Progress") {
-            downloadedBytes += progress.data.chunkLength;
-            const percent = totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : 0;
-            console.log(`[Updater] Downloaded ${percent}%`);
-          } else if (progress.event === "Finished") {
-            console.log("[Updater] Download finished");
-          }
-        });
-
-        console.log("[Updater] Download complete, showing toast...");
+        // Download in background
+        await update.downloadAndInstall();
 
         // Show toast when download is complete
         toastIdRef.current = toast.custom(
@@ -73,13 +47,9 @@ export function UpdateChecker() {
                 <Button
                   size="sm"
                   className="flex-1"
-                  onClick={async () => {
+                  onClick={() => {
                     toast.dismiss(id);
-                    console.log("[Updater] Installing update...");
-                    await update.install();
-                    console.log("[Updater] Relaunching...");
-                    const { relaunch } = await import("@tauri-apps/plugin-process");
-                    await relaunch();
+                    relaunch();
                   }}
                 >
                   <RefreshCw className="mr-1.5 size-3.5" />
@@ -115,16 +85,14 @@ export function UpdateChecker() {
           ),
           { duration: Infinity },
         );
-      } catch (error) {
-        console.error("[Updater] Error:", error);
+      } catch {
+        // Silently fail - update check is not critical
       }
     }
 
     // Check for updates on mount, but only in production
     if (!import.meta.env.DEV) {
-      // Small delay to let the app load first
-      const timer = setTimeout(checkAndDownload, 3000);
-      return () => clearTimeout(timer);
+      checkAndDownload();
     }
 
     return () => {
