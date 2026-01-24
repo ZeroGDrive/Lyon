@@ -2,7 +2,6 @@ import type {
   AIProvider,
   AIReviewComment,
   AIReviewResult as AIReviewResultType,
-  CodexReasoningEffort,
 } from "@/types";
 import { CODEX_REASONING_EFFORTS, DEFAULT_SYSTEM_PROMPTS, MODELS_BY_PROVIDER } from "@/types";
 
@@ -61,8 +60,8 @@ function AIReviewPanel({
     setModel,
     setReasoningEffort,
     setSystemPrompt,
-    getReviewsForPR,
-    getActiveReviewForProvider,
+    reviews,
+    activeReviewByProvider,
   } = useReviewStore();
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [promptTemplate, setPromptTemplate] = useState<string>("default");
@@ -75,8 +74,11 @@ function AIReviewPanel({
     { value: "custom", label: "Custom Prompt" },
   ];
 
-  const providerReviews = getReviewsForPR(prNumber, repository, config.provider);
-  const activeReview = getActiveReviewForProvider(config.provider);
+  const providerReviews = useMemo(
+    () => reviews.filter((r) => r.prNumber === prNumber && r.repository === repository && r.provider === config.provider),
+    [reviews, prNumber, repository, config.provider]
+  );
+  const activeReview = activeReviewByProvider[config.provider];
   const selectedReview = selectedReviewId
     ? (providerReviews.find((review) => review.id === selectedReviewId) ?? null)
     : null;

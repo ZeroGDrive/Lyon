@@ -172,6 +172,11 @@ async fn start_ai_stream(
     let stdout_app = app.clone();
     let stdout_task = tokio::spawn(async move {
         use tokio::io::AsyncReadExt;
+
+        // Small delay to ensure frontend event listeners are fully registered
+        // This prevents a race condition where events are emitted before listeners are ready
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
         let mut stdout_reader = stdout;
         let mut buffer = Vec::new();
 
@@ -264,6 +269,9 @@ async fn start_ai_stream(
     let stderr_process_id = process_id.clone();
     let stderr_app = app.clone();
     let stderr_task = tokio::spawn(async move {
+        // Small delay to ensure frontend event listeners are fully registered
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             let _ = stderr_app.emit(
@@ -413,7 +421,6 @@ async fn set_tray_badge(count: Option<i32>, app: AppHandle) -> Result<(), String
 async fn update_tray_menu(prs: Vec<TrayPRInfo>, app: AppHandle) -> Result<(), String> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 
-    println!("[TRAY] update_tray_menu called with {} PRs", prs.len());
 
     if let Some(tray) = app.tray_by_id("main-tray") {
         let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
@@ -459,9 +466,6 @@ async fn update_tray_menu(prs: Vec<TrayPRInfo>, app: AppHandle) -> Result<(), St
         let menu = Menu::with_items(&app, &item_refs).map_err(|e| e.to_string())?;
         
         tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
-        println!("[TRAY] Menu updated successfully");
-    } else {
-        println!("[TRAY] Tray not found!");
     }
 
     Ok(())
@@ -490,16 +494,15 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         ],
     )?;
 
-    println!("[TRAY] Building tray icon...");
 
     let tray = TrayIconBuilder::with_id("main-tray")
         .tooltip("Lyon - PR Review")
         .icon(tauri::include_image!("icons/tray-template@2x.png"))
+        .icon_as_template(true)
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| {
             let event_id = event.id().as_ref();
-            println!("[TRAY] Menu event: {}", event_id);
             if event_id.starts_with("pr-") {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
@@ -519,12 +522,9 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         })
-        .on_tray_icon_event(|_tray, event| {
-            println!("[TRAY] Icon event: {:?}", event);
-        })
         .build(app)?;
 
-    println!("[TRAY] Tray built successfully with id: {:?}", tray.id());
+    let _ = tray;
 
     Ok(())
 }
