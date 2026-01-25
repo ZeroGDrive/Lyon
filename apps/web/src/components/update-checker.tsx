@@ -11,22 +11,58 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import X from "lucide-react/dist/esm/icons/x";
 
 const DISMISSED_VERSION_KEY = "update-dismissed-version";
+const AUTO_RELAUNCH = true;
 
 export function UpdateChecker() {
   const toastIdRef = useRef<string | number | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function checkAndDownload() {
       try {
         const update = await check();
-        if (!update) return;
+        if (!update || cancelled) return;
 
         // Check if user dismissed this version
         const dismissedVersion = localStorage.getItem(DISMISSED_VERSION_KEY);
         if (dismissedVersion === update.version) return;
 
-        // Download in background
+        // Show progress while the update downloads and installs
+        toastIdRef.current = toast.custom(
+          () => (
+            <div className="relative w-full max-w-sm rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-primary/10 p-2">
+                  <RefreshCw className="size-4 animate-spin text-primary" />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <p className="text-sm font-medium">Downloading update</p>
+                  <p className="text-xs text-muted-foreground">
+                    This runs in the background
+                  </p>
+                </div>
+              </div>
+            </div>
+          ),
+          { duration: Infinity },
+        );
+
+        // Download and install the update
         await update.downloadAndInstall();
+
+        if (cancelled) return;
+
+        if (toastIdRef.current) {
+          toast.dismiss(toastIdRef.current);
+          toastIdRef.current = null;
+        }
+
+        if (AUTO_RELAUNCH) {
+          toast.success("Update installed. Restarting...");
+          await relaunch();
+          return;
+        }
 
         // Show toast when download is complete
         toastIdRef.current = toast.custom(
@@ -85,8 +121,15 @@ export function UpdateChecker() {
           ),
           { duration: Infinity },
         );
-      } catch {
-        // Silently fail - update check is not critical
+      } catch (error) {
+        if (toastIdRef.current) {
+          toast.dismiss(toastIdRef.current);
+          toastIdRef.current = null;
+        }
+
+        const message = error instanceof Error ? error.message : "Unknown error";
+        console.error("Update check failed:", error);
+        toast.error("Update failed", { description: message });
       }
     }
 
@@ -96,8 +139,10 @@ export function UpdateChecker() {
     }
 
     return () => {
+      cancelled = true;
       if (toastIdRef.current) {
         toast.dismiss(toastIdRef.current);
+        toastIdRef.current = null;
       }
     };
   }, []);
