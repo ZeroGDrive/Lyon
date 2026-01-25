@@ -20,6 +20,17 @@ export interface GhCliStatus {
   error?: string;
 }
 
+function isCommandNotFound(errorMessage: string): boolean {
+  const message = errorMessage.toLowerCase();
+  return (
+    message.includes("os error 2") ||
+    message.includes("no such file or directory") ||
+    message.includes("cannot find the file") ||
+    message.includes("not recognized") ||
+    message.includes("failed to execute")
+  );
+}
+
 /**
  * Check if gh CLI is installed and authenticated
  */
@@ -27,11 +38,19 @@ export async function checkGhCliStatus(): Promise<GhCliStatus> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
 
-    // First check if gh is installed
+    // Check if gh is installed (cross-platform)
     try {
-      await invoke<string>("run_shell_command", { command: "which", args: ["gh"] });
-    } catch {
-      return { installed: false, authenticated: false, error: "gh CLI is not installed" };
+      await invoke<string>("run_gh_command", { args: ["--version"] });
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      if (isCommandNotFound(errorMsg)) {
+        return {
+          installed: false,
+          authenticated: false,
+          error: "gh CLI is not installed or not available on PATH",
+        };
+      }
+      return { installed: false, authenticated: false, error: errorMsg };
     }
 
     // Check if authenticated by running gh auth status

@@ -79,7 +79,7 @@ function SettingsDialog({ open, onOpenChange, watchedRepos }: SettingsDialogProp
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="space-y-6 px-6 pb-6">
           <section className="space-y-3">
             <div>
               <h3 className="text-sm font-semibold text-foreground">AI defaults</h3>
@@ -90,16 +90,19 @@ function SettingsDialog({ open, onOpenChange, watchedRepos }: SettingsDialogProp
             <div className="flex items-center gap-3">
               <Select
                 value={defaultProvider}
-                onValueChange={(value) => handleProviderChange(value as AIProvider)}
+                onValueChange={(item) => {
+                  const val = item as { value: string; label: string } | null;
+                  if (val) handleProviderChange(val.value as AIProvider);
+                }}
                 items={providerItems}
               >
                 <SelectTrigger className="w-[200px]">
                   <SelectValue placeholder="Select provider" />
                 </SelectTrigger>
                 <SelectContent>
-                  {providerOptions.map((option) => (
-                    <SelectItem key={option.id} value={option.id}>
-                      {option.label}
+                  {providerItems.map((item) => (
+                    <SelectItem key={item.value} value={item}>
+                      {item.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

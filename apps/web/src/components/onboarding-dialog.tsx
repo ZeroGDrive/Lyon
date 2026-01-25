@@ -68,7 +68,7 @@ export function OnboardingDialog({ open, onOpenChange, onComplete }: OnboardingD
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 px-6 py-4">
           {/* Status indicators */}
           <div className="space-y-3">
             <StatusItem

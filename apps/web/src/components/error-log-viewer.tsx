@@ -87,7 +87,10 @@ function ErrorLogViewer({ open, onOpenChange }: ErrorLogViewerProps) {
         <div className="flex items-center justify-between gap-3 pb-3 border-b border-glass-border-subtle">
           <Select
             value={filter}
-            onValueChange={(value) => setFilter(value as ErrorLogSource | "all")}
+            onValueChange={(item) => {
+              const val = item as { value: string; label: string } | null;
+              if (val) setFilter(val.value as ErrorLogSource | "all");
+            }}
             items={filterItems}
           >
             <SelectTrigger className="w-[160px]" size="sm">
@@ -95,7 +98,7 @@ function ErrorLogViewer({ open, onOpenChange }: ErrorLogViewerProps) {
             </SelectTrigger>
             <SelectContent>
               {filterItems.map((item) => (
-                <SelectItem key={item.value} value={item.value}>
+                <SelectItem key={item.value} value={item}>
                   {item.label}
                 </SelectItem>
               ))}

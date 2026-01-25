@@ -18,13 +18,23 @@ function MainContent({ children, className, header }: MainContentProps) {
       {header && (
         <div
           data-slot="main-header"
-          className={cn("glass-subtle shrink-0 border-b border-glass-border-subtle", "px-6 py-4")}
+          className={cn(
+            "relative shrink-0 border-b border-border/50 px-8 py-5",
+            "bg-background/60 backdrop-blur-md backdrop-saturate-150",
+          )}
         >
+          {/* Top highlight */}
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 h-px"
+            style={{
+              background: "linear-gradient(90deg, transparent, var(--glass-highlight) 30%, var(--glass-highlight) 70%, transparent)",
+            }}
+          />
           {header}
         </div>
       )}
 
-      <ScrollArea orientation="vertical" data-slot="main-body" className="flex-1">
+      <ScrollArea data-slot="main-body" className="flex-1">
         {children}
       </ScrollArea>
     </main>
@@ -39,7 +49,7 @@ interface ContentSectionProps {
 
 function ContentSection({ children, className, padded = true }: ContentSectionProps) {
   return (
-    <section data-slot="content-section" className={cn(padded && "p-6", className)}>
+    <section data-slot="content-section" className={cn(padded && "p-8", className)}>
       {children}
     </section>
   );
@@ -56,7 +66,7 @@ function GlassCard({ children, className, variant = "default" }: GlassCardProps)
     <div
       data-slot="glass-card"
       className={cn(
-        "relative rounded-xl",
+        "relative rounded-2xl overflow-hidden p-6",
         variant === "default" && "glass",
         variant === "subtle" && "glass-subtle",
         variant === "heavy" && "glass-heavy",
@@ -65,11 +75,20 @@ function GlassCard({ children, className, variant = "default" }: GlassCardProps)
     >
       {children}
 
+      {/* Glossy top highlight */}
       <div
-        className="pointer-events-none absolute inset-0 rounded-xl"
+        className="pointer-events-none absolute inset-x-0 top-0 h-px"
         style={{
-          background: "linear-gradient(135deg, var(--glass-highlight) 0%, transparent 50%)",
-          opacity: 0.5,
+          background: "linear-gradient(90deg, transparent 10%, var(--glass-highlight) 50%, transparent 90%)",
+        }}
+      />
+
+      {/* Corner shine */}
+      <div
+        className="pointer-events-none absolute inset-0 rounded-2xl"
+        style={{
+          background: "linear-gradient(135deg, var(--glass-highlight) 0%, transparent 40%)",
+          opacity: 0.4,
         }}
       />
     </div>

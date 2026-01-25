@@ -107,7 +107,7 @@ const ThinkingBlockItem = memo(function ThinkingBlockItem({ block }: ThinkingBlo
 
       {isExpanded && (
         <div className="border-t border-glass-border-subtle px-3 py-2">
-          <ScrollArea orientation="vertical" className="max-h-48">
+          <ScrollArea className="max-h-48">
             <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-muted-foreground">
               {block.content}
             </pre>

@@ -18,7 +18,7 @@ import Settings from "lucide-react/dist/esm/icons/settings";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2";
 import User from "lucide-react/dist/esm/icons/user";
 import X from "lucide-react/dist/esm/icons/x";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { AppLayout } from "@/components/layout/app-layout";
@@ -97,26 +97,26 @@ const PR_STATE_OPTIONS = [
   { value: "open", label: "Open" },
   { value: "closed", label: "Closed" },
   { value: "merged", label: "Merged" },
-] as const;
+];
 
 const PR_REVIEW_OPTIONS = [
   { value: "all", label: "All reviews" },
   { value: "needs-review", label: "Needs review" },
   { value: "approved", label: "Approved" },
   { value: "changes-requested", label: "Changes requested" },
-] as const;
+];
 
 const PR_DRAFT_OPTIONS = [
   { value: "all", label: "All PRs" },
   { value: "draft", label: "Draft only" },
   { value: "ready", label: "Ready for review" },
-] as const;
+];
 
 const PR_SORT_OPTIONS = [
   { value: "updated", label: "Updated" },
   { value: "created", label: "Created" },
   { value: "size", label: "Size" },
-] as const;
+];
 
 function HomeComponent() {
   const { watchedRepos, addWatchedRepo, removeWatchedRepo } = usePRStore();
@@ -177,6 +177,7 @@ function HomeComponent() {
   const [prSortBy, setPrSortBy] = useState<"updated" | "created" | "size">("updated");
 
   const { config, addReview, updateReview } = useReviewStore();
+  const prDetailsRequestIdRef = useRef(0);
 
   // Check gh CLI status and current user on mount
   useEffect(() => {
@@ -199,8 +200,6 @@ function HomeComponent() {
     };
     checkSetup();
   }, []);
-
-
   const fetchPRs = useCallback(async () => {
     if (watchedRepos.length === 0) {
       setPullRequests(new Map());
@@ -308,18 +307,25 @@ function HomeComponent() {
     setIsLoadingOrgRepos(false);
   }, []);
 
-  const refreshReviewComments = useCallback(async (pr: PullRequest) => {
-    const commentsResult = await getReviewComments(pr.repository.fullName, pr.number);
-    const comments = commentsResult.success && commentsResult.data ? commentsResult.data : [];
+  const refreshReviewComments = useCallback(
+    async (pr: PullRequest, shouldApply?: () => boolean) => {
+      const commentsResult = await getReviewComments(pr.repository.fullName, pr.number);
+      const comments = commentsResult.success && commentsResult.data ? commentsResult.data : [];
 
-    if (comments.length > 0) {
-      setCommentsByLine(convertToCommentsByLine(comments));
-      setReviewComments(convertReviewCommentsToComments(comments));
-    } else {
-      setCommentsByLine(new Map());
-      setReviewComments([]);
-    }
-  }, []);
+      if (shouldApply && !shouldApply()) {
+        return;
+      }
+
+      if (comments.length > 0) {
+        setCommentsByLine(convertToCommentsByLine(comments));
+        setReviewComments(convertReviewCommentsToComments(comments));
+      } else {
+        setCommentsByLine(new Map());
+        setReviewComments([]);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (showAddRepo && userRepos.length === 0) {
@@ -355,6 +361,9 @@ function HomeComponent() {
   );
 
   const fetchPRDetails = useCallback(async (pr: PullRequest) => {
+    const requestId = prDetailsRequestIdRef.current + 1;
+    prDetailsRequestIdRef.current = requestId;
+
     setIsLoadingPRDetails(true);
     setIsLoadingDiff(true);
     setDiffError(null);
@@ -366,6 +375,8 @@ function HomeComponent() {
         getPullRequestDiff(pr.repository.fullName, pr.number),
         getPendingReview(pr.repository.fullName, pr.number),
       ]);
+
+      if (requestId !== prDetailsRequestIdRef.current) return;
 
       if (detailsResult.success && detailsResult.data) {
         const fullPR = detailsResult.data;
@@ -401,20 +412,28 @@ function HomeComponent() {
         setPendingReview(pendingReviewResult.data);
       }
 
-      await refreshReviewComments(pr);
+      await refreshReviewComments(pr, () => requestId === prDetailsRequestIdRef.current);
     } catch (err) {
+      if (requestId !== prDetailsRequestIdRef.current) return;
       console.error("Failed to fetch PR details:", err);
       setDiffFiles([]);
       setDiffError(err instanceof Error ? err.message : "An unexpected error occurred");
     } finally {
-      setIsLoadingPRDetails(false);
-      setIsLoadingDiff(false);
+      if (requestId === prDetailsRequestIdRef.current) {
+        setIsLoadingPRDetails(false);
+        setIsLoadingDiff(false);
+      }
     }
   }, []);
 
   const handleSelectPR = useCallback(
     (pr: PullRequest) => {
       setSelectedPR(pr);
+      setPendingReview(null);
+      setReviewComments([]);
+      setCommentsByLine(new Map());
+      setSelectedDiffFile(null);
+      setScrollToLine(null);
       setDiffFiles([]);
       setDiffError(null);
       fetchPRDetails(pr);
@@ -951,42 +970,48 @@ function HomeComponent() {
       </SidebarSection>
 
       <SidebarSection title="Pull Requests">
-        <div className="mb-3 space-y-2 px-2">
+        <div className="mb-3 space-y-2 px-1">
           <Input
             value={prSearch}
             onChange={(e) => setPrSearch(e.target.value)}
             placeholder="Search PRs, authors, labels..."
-            className="h-9 w-full text-xs"
+            className="h-8 w-full text-xs"
           />
           <div className="grid grid-cols-2 gap-2">
             <Select
-              value={prStateFilter}
-              onValueChange={(value) => setPrStateFilter(value as typeof prStateFilter)}
               items={PR_STATE_OPTIONS}
+              defaultValue="all"
+              onValueChange={(item) => {
+                const val = item as { value: string; label: string } | null;
+                if (val) setPrStateFilter(val.value as typeof prStateFilter);
+              }}
             >
               <SelectTrigger className="h-8 w-full text-xs">
                 <SelectValue placeholder="State" />
               </SelectTrigger>
               <SelectContent>
-                {PR_STATE_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
+                {PR_STATE_OPTIONS.map((item) => (
+                  <SelectItem key={item.value} value={item}>
+                    {item.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Select
-              value={prReviewFilter}
-              onValueChange={(value) => setPrReviewFilter(value as typeof prReviewFilter)}
               items={PR_REVIEW_OPTIONS}
+              defaultValue="all"
+              onValueChange={(item) => {
+                const val = item as { value: string; label: string } | null;
+                if (val) setPrReviewFilter(val.value as typeof prReviewFilter);
+              }}
             >
               <SelectTrigger className="h-8 w-full text-xs">
                 <SelectValue placeholder="Review" />
               </SelectTrigger>
               <SelectContent>
-                {PR_REVIEW_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
+                {PR_REVIEW_OPTIONS.map((item) => (
+                  <SelectItem key={item.value} value={item}>
+                    {item.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -994,33 +1019,39 @@ function HomeComponent() {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Select
-              value={prDraftFilter}
-              onValueChange={(value) => setPrDraftFilter(value as typeof prDraftFilter)}
               items={PR_DRAFT_OPTIONS}
+              defaultValue="all"
+              onValueChange={(item) => {
+                const val = item as { value: string; label: string } | null;
+                if (val) setPrDraftFilter(val.value as typeof prDraftFilter);
+              }}
             >
               <SelectTrigger className="h-8 w-full text-xs">
                 <SelectValue placeholder="Draft" />
               </SelectTrigger>
               <SelectContent>
-                {PR_DRAFT_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
+                {PR_DRAFT_OPTIONS.map((item) => (
+                  <SelectItem key={item.value} value={item}>
+                    {item.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Select
-              value={prSortBy}
-              onValueChange={(value) => setPrSortBy(value as typeof prSortBy)}
               items={PR_SORT_OPTIONS}
+              defaultValue="updated"
+              onValueChange={(item) => {
+                const val = item as { value: string; label: string } | null;
+                if (val) setPrSortBy(val.value as typeof prSortBy);
+              }}
             >
               <SelectTrigger className="h-8 w-full text-xs">
                 <SelectValue placeholder="Sort by" />
               </SelectTrigger>
               <SelectContent>
-                {PR_SORT_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
+                {PR_SORT_OPTIONS.map((item) => (
+                  <SelectItem key={item.value} value={item}>
+                    {item.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1214,7 +1245,7 @@ function HomeComponent() {
             </div>
           ) : (
             <div className="flex h-[60vh] flex-col items-center justify-center">
-              <GlassCard className="max-w-md p-8 text-center" variant="subtle">
+              <GlassCard className="max-w-md text-center" variant="subtle">
                 {isLoading ? (
                   <>
                     <Spinner size="xl" className="mx-auto mb-4 text-muted-foreground" />
@@ -1287,7 +1318,7 @@ function HomeComponent() {
 
       {showAddRepo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <GlassCard className="w-full max-w-md p-6">
+          <GlassCard className="w-full max-w-md">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Add Repository</h2>
               <Button variant="ghost" size="icon-sm" onClick={() => setShowAddRepo(false)}>
@@ -1325,7 +1356,7 @@ function HomeComponent() {
                   Watched Repositories
                 </label>
                 <div className="max-h-32 rounded-lg border border-glass-border-subtle">
-                  <ScrollArea orientation="vertical" className="h-full max-h-32">
+                  <ScrollArea className="h-full max-h-32">
                     <div className="space-y-1 p-1">
                       {watchedRepos.map((repo) => (
                         <div
@@ -1390,7 +1421,7 @@ function HomeComponent() {
                   </div>
                 ) : (
                   <div className="h-48 rounded-lg border border-glass-border-subtle">
-                    <ScrollArea orientation="vertical" className="h-full">
+                    <ScrollArea className="h-full">
                       <div className="space-y-1 p-1">
                         {filteredUserRepos.slice(0, 20).map((repo) => (
                           <button
@@ -1437,7 +1468,7 @@ function HomeComponent() {
                     </p>
                   ) : (
                     <div className="h-32 rounded-lg border border-glass-border-subtle">
-                      <ScrollArea orientation="vertical" className="h-full">
+                      <ScrollArea className="h-full">
                         <div className="space-y-1 p-1">
                           {organizations.map((org) => (
                             <button
@@ -1479,7 +1510,7 @@ function HomeComponent() {
                       </div>
                     ) : (
                       <div className="h-40 rounded-lg border border-glass-border-subtle">
-                        <ScrollArea orientation="vertical" className="h-full">
+                        <ScrollArea className="h-full">
                           <div className="space-y-1 p-1">
                             {filteredOrgRepos.slice(0, 20).map((repo) => (
                               <button
