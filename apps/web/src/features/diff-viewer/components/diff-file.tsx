@@ -84,7 +84,7 @@ function DiffFile({ file, commentsByLine, onAddComment }: DiffFileProps) {
           No changes to display
         </div>
       ) : (
-        <ScrollArea orientation="both" className="flex-1 bg-background/30">
+        <ScrollArea className="flex-1 bg-background/30">
           <div className="min-w-max">
             {file.hunks.map((hunk, index) => (
               <DiffHunk

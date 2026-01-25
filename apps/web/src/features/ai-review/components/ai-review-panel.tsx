@@ -222,8 +222,11 @@ function AIReviewPanel({
               Review Focus
             </label>
             <Select
-              value={promptTemplate}
-              onValueChange={handleTemplateChange}
+              defaultValue="default"
+              onValueChange={(item) => {
+                const val = item as { value: string; label: string } | null;
+                if (val) handleTemplateChange(val.value);
+              }}
               items={reviewFocusItems}
             >
               <SelectTrigger className="w-full">
@@ -231,7 +234,7 @@ function AIReviewPanel({
               </SelectTrigger>
               <SelectContent>
                 {reviewFocusItems.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
+                  <SelectItem key={item.value} value={item}>
                     {item.label}
                   </SelectItem>
                 ))}
@@ -282,8 +285,11 @@ function AIReviewPanel({
             </div>
             <div className="min-w-[220px]">
               <Select
-                value={selectedReviewId}
-                onValueChange={(value) => setSelectedReviewId(value)}
+                value={selectedReviewId ?? historyItems[0]?.value}
+                onValueChange={(item) => {
+                  const val = item as { value: string; label: string } | null;
+                  if (val) setSelectedReviewId(val.value);
+                }}
                 items={historyItems}
               >
                 <SelectTrigger className="w-full">
@@ -291,7 +297,7 @@ function AIReviewPanel({
                 </SelectTrigger>
                 <SelectContent>
                   {historyItems.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
+                    <SelectItem key={item.value} value={item}>
                       {item.label}
                     </SelectItem>
                   ))}
@@ -353,7 +359,7 @@ function ReviewResultCard({
         )}
       </div>
 
-      <ScrollArea orientation="vertical" className="min-h-0 flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="pr-3">
           {review.summary && (
             <div className="mt-3">

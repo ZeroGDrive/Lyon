@@ -1,25 +1,31 @@
-import Loader2 from "lucide-react/dist/esm/icons/loader-2";
-
+import { Loader2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface SpinnerProps {
-  className?: string;
-  size?: "xs" | "sm" | "md" | "lg" | "xl";
-}
 
 const sizeClasses = {
   xs: "size-3",
   sm: "size-4",
-  md: "size-5",
-  lg: "size-8",
-  xl: "size-12",
-} as const;
+  default: "size-5",
+  lg: "size-6",
+  xl: "size-8",
+};
 
-/**
- * Hardware-accelerated spinner component.
- */
-function Spinner({ className, size = "md" }: SpinnerProps) {
-  return <Loader2 className={cn("animate-spin", sizeClasses[size], className)} />;
+interface SpinnerProps extends Omit<React.ComponentProps<typeof Loader2Icon>, 'size'> {
+  size?: keyof typeof sizeClasses;
+}
+
+function Spinner({
+  className,
+  size = "default",
+  ...props
+}: SpinnerProps) {
+  return (
+    <Loader2Icon
+      aria-label="Loading"
+      className={cn("animate-spin", sizeClasses[size], className)}
+      role="status"
+      {...props}
+    />
+  );
 }
 
 export { Spinner };

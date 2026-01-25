@@ -10,7 +10,16 @@ import Files from "lucide-react/dist/esm/icons/files";
 import FileSymlink from "lucide-react/dist/esm/icons/file-symlink";
 import Folder from "lucide-react/dist/esm/icons/folder";
 import MessageSquare from "lucide-react/dist/esm/icons/message-square";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
@@ -150,6 +159,7 @@ function DiffFileSidebar({
 }: DiffFileSidebarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const tree = useMemo(() => buildFileTree(files), [files]);
+  const [contentWidth, setContentWidth] = useState<number | null>(null);
 
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => {
     // Initially expand all folders
@@ -213,6 +223,25 @@ function DiffFileSidebar({
     overscan: 10,
   });
 
+  useLayoutEffect(() => {
+    const scrollElement = scrollRef.current;
+    if (!scrollElement) return;
+
+    const updateWidth = () => {
+      const nextWidth = Math.max(scrollElement.scrollWidth, scrollElement.clientWidth);
+      setContentWidth((prev) => (prev === nextWidth ? prev : nextWidth));
+    };
+
+    updateWidth();
+
+    const resizeObserver = new ResizeObserver(updateWidth);
+    resizeObserver.observe(scrollElement);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [flatRows]);
+
   return (
     <div className="flex h-full w-64 shrink-0 flex-col border-r border-glass-border bg-glass-bg">
       <div className="border-b border-glass-border-subtle px-3 py-2">
@@ -221,7 +250,27 @@ function DiffFileSidebar({
         </h3>
       </div>
       <div ref={scrollRef} className="flex-1 overflow-auto">
-        <div className="relative min-w-max" style={{ height: virtualizer.getTotalSize() }}>
+        <div className="relative min-w-full" style={{ height: virtualizer.getTotalSize() }}>
+          {/* Sizer element - establishes minimum width for horizontal scroll */}
+          <div className="pointer-events-none invisible h-0 overflow-hidden" aria-hidden="true">
+            {flatRows.map((row) => (
+              <div
+                key={row.key}
+                className="flex items-center gap-1.5 whitespace-nowrap pr-2 text-xs"
+                style={{ paddingLeft: 8 + row.depth * 16 + (row.type === "file" ? 20 : 0) }}
+              >
+                <span className="size-3.5" />
+                {row.type === "folder" && <span className="size-3.5" />}
+                <span className="font-mono">{row.name}</span>
+                {row.file && (
+                  <span className="flex gap-1.5">
+                    {row.file.additions > 0 && <span>+{row.file.additions}</span>}
+                    {row.file.deletions > 0 && <span>-{row.file.deletions}</span>}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const row = flatRows[virtualRow.index];
             if (!row) return null;
@@ -234,7 +283,7 @@ function DiffFileSidebar({
                   position: "absolute",
                   top: 0,
                   left: 0,
-                  width: "100%",
+                  width: contentWidth ? `${contentWidth}px` : "100%",
                   height: ROW_HEIGHT,
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
@@ -275,20 +324,24 @@ const VirtualRow = memo(function VirtualRow({
 
   if (row.type === "folder") {
     return (
-      <button
-        type="button"
-        onClick={() => onToggleFolder(row.path)}
-        className="flex w-full items-center gap-1.5 text-left text-xs transition-colors hover:bg-glass-highlight"
-        style={{ ...style, paddingLeft, paddingTop: 4, paddingBottom: 4 }}
-      >
-        {row.isExpanded ? (
-          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-        )}
-        <Folder className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="whitespace-nowrap font-mono text-foreground/80">{row.name}</span>
-      </button>
+      <div style={style} className="group">
+        <button
+          type="button"
+          onClick={() => onToggleFolder(row.path)}
+          className="relative flex h-full w-full items-center gap-1.5 text-left text-xs before:absolute before:inset-0 before:transition-colors group-hover:before:bg-glass-highlight"
+          style={{ paddingLeft, paddingRight: 8 }}
+        >
+          <span className="relative flex items-center gap-1.5">
+            {row.isExpanded ? (
+              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+            )}
+            <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="whitespace-nowrap font-mono text-foreground/80">{row.name}</span>
+          </span>
+        </button>
+      </div>
     );
   }
 
@@ -300,33 +353,37 @@ const VirtualRow = memo(function VirtualRow({
   const commentCount = getCommentCountForFile(file.path, commentsByLine);
 
   return (
-    <button
-      type="button"
-      onClick={() => onSelectFile(file.path)}
-      className={cn(
-        "flex w-full items-center gap-1.5 text-left text-xs",
-        "transition-colors hover:bg-glass-highlight",
-        isSelected && "bg-primary/10 border-l-2 border-primary",
-      )}
-      style={{ ...style, paddingLeft: paddingLeft + 20, paddingTop: 4, paddingBottom: 4 }}
-    >
-      {isPending ? (
-        <Spinner size="xs" className="shrink-0 text-primary" />
-      ) : (
-        <Icon className={cn("size-3.5 shrink-0", statusColors[file.status])} />
-      )}
-      <span className="whitespace-nowrap font-mono text-foreground/80">{row.name}</span>
-      <div className="flex shrink-0 items-center gap-1.5 pr-2 text-[10px] font-medium">
-        {commentCount > 0 && (
-          <span className="flex items-center gap-0.5 text-primary">
-            <MessageSquare className="size-3" />
-            {commentCount}
-          </span>
+    <div style={style} className="group">
+      <button
+        type="button"
+        onClick={() => onSelectFile(file.path)}
+        className={cn(
+          "relative flex h-full w-full items-center gap-1.5 text-left text-xs",
+          "before:absolute before:inset-0 before:transition-colors group-hover:before:bg-glass-highlight",
+          isSelected && "before:bg-primary/10 before:border-l-2 before:border-primary",
         )}
-        {file.additions > 0 && <span className="text-green-400">+{file.additions}</span>}
-        {file.deletions > 0 && <span className="text-red-400">-{file.deletions}</span>}
-      </div>
-    </button>
+        style={{ paddingLeft: paddingLeft + 20, paddingRight: 8 }}
+      >
+        <span className="relative flex items-center gap-1.5">
+          {isPending ? (
+            <Spinner size="xs" className="shrink-0 text-primary" />
+          ) : (
+            <Icon className={cn("size-3.5 shrink-0", statusColors[file.status])} />
+          )}
+          <span className="whitespace-nowrap font-mono text-foreground/80">{row.name}</span>
+        </span>
+        <span className="relative flex shrink-0 items-center gap-1.5 text-[10px] font-medium">
+          {commentCount > 0 && (
+            <span className="flex items-center gap-0.5 text-primary">
+              <MessageSquare className="size-3" />
+              {commentCount}
+            </span>
+          )}
+          {file.additions > 0 && <span className="text-green-400">+{file.additions}</span>}
+          {file.deletions > 0 && <span className="text-red-400">-{file.deletions}</span>}
+        </span>
+      </button>
+    </div>
   );
 });
 

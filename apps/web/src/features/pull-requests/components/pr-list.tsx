@@ -107,7 +107,7 @@ function PRList({
               type="button"
               onClick={() => toggleRepo(repo.fullName)}
               className={cn(
-                "group flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-lg px-2 py-2 text-sm font-medium",
+                "group flex w-full min-w-0 items-center gap-2.5 overflow-hidden rounded-lg px-3 py-2.5 text-sm font-medium",
                 "transition-colors duration-200",
                 "hover:bg-glass-highlight",
               )}
@@ -146,7 +146,7 @@ function PRList({
             </button>
 
             {isExpanded && (
-              <div className="mt-1 min-w-0 space-y-0.5 pl-2">
+              <div className="mt-1.5 min-w-0 space-y-1 pl-3">
                 {prs.length === 0 ? (
                   <p className="px-3 py-2 text-xs text-muted-foreground/70">
                     No open pull requests

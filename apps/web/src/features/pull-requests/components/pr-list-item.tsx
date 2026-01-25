@@ -37,7 +37,7 @@ function PRListItem({ pr, isSelected, onClick }: PRListItemProps) {
       type="button"
       onClick={onClick}
       className={cn(
-        "group relative flex w-full min-w-0 flex-col gap-1.5 overflow-hidden rounded-lg px-3 py-2.5 text-left",
+        "group relative flex w-full min-w-0 flex-col gap-2 overflow-hidden rounded-xl px-4 py-3 text-left",
         "transition-all duration-200 ease-out",
         "hover:bg-glass-highlight",
         isSelected && ["bg-glass-highlight", "shadow-sm shadow-glass-shadow"],

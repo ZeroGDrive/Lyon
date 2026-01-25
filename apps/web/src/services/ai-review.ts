@@ -42,6 +42,17 @@ interface ProviderConfig {
   useStdin: boolean;
 }
 
+function isCommandNotFound(errorMessage: string): boolean {
+  const message = errorMessage.toLowerCase();
+  return (
+    message.includes("os error 2") ||
+    message.includes("no such file or directory") ||
+    message.includes("cannot find the file") ||
+    message.includes("not recognized") ||
+    message.includes("failed to execute")
+  );
+}
+
 function getProviderConfig(
   provider: AIProvider,
   model: string | undefined,
@@ -418,38 +429,21 @@ export async function checkProviderStatus(provider: AIProvider): Promise<AIProvi
     const { invoke } = await import("@tauri-apps/api/core");
     const command = getProviderCommand(provider);
 
-    // Check if installed
+    // Check if installed (cross-platform) by running a simple command
     try {
-      await invoke<string>("run_shell_command", { command: "which", args: [command] });
-    } catch {
-      return {
-        installed: false,
-        authenticated: false,
-        error: `${command} CLI is not installed`,
-      };
-    }
-
-    // Check if authenticated by running a simple command
-    try {
-      if (provider === "claude") {
-        // Claude: try to get config or run a simple check
-        await invoke<string>("run_shell_command", {
-          command,
-          args: ["--version"],
-        });
-        // Claude doesn't have an easy auth check, assume authenticated if installed
-        return { installed: true, authenticated: true };
-      } else if (provider === "codex") {
-        // Codex: check version
-        await invoke<string>("run_shell_command", {
-          command,
-          args: ["--version"],
-        });
-        return { installed: true, authenticated: true };
-      }
-      return { installed: true, authenticated: true };
+      await invoke<string>("run_shell_command", {
+        command,
+        args: ["--version"],
+      });
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
+      if (isCommandNotFound(errorMsg)) {
+        return {
+          installed: false,
+          authenticated: false,
+          error: `${command} CLI is not installed or not available on PATH`,
+        };
+      }
       if (
         errorMsg.includes("not logged in") ||
         errorMsg.includes("auth") ||
@@ -464,6 +458,9 @@ export async function checkProviderStatus(provider: AIProvider): Promise<AIProvi
       // If version check fails, it might still work
       return { installed: true, authenticated: true };
     }
+
+    // Claude/Codex don't have reliable auth status checks
+    return { installed: true, authenticated: true };
   } catch (error) {
     return {
       installed: false,
