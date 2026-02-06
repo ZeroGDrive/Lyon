@@ -980,10 +980,9 @@ function HomeComponent() {
           <div className="grid grid-cols-2 gap-2">
             <Select
               items={PR_STATE_OPTIONS}
-              defaultValue="all"
-              onValueChange={(item) => {
-                const val = item as { value: string; label: string } | null;
-                if (val) setPrStateFilter(val.value as typeof prStateFilter);
+              defaultValue={PR_STATE_OPTIONS[0]}
+              onValueChange={(item: { value: string; label: string } | null) => {
+                if (item) setPrStateFilter(item.value as typeof prStateFilter);
               }}
             >
               <SelectTrigger className="h-8 w-full text-xs">
@@ -999,10 +998,9 @@ function HomeComponent() {
             </Select>
             <Select
               items={PR_REVIEW_OPTIONS}
-              defaultValue="all"
-              onValueChange={(item) => {
-                const val = item as { value: string; label: string } | null;
-                if (val) setPrReviewFilter(val.value as typeof prReviewFilter);
+              defaultValue={PR_REVIEW_OPTIONS[0]}
+              onValueChange={(item: { value: string; label: string } | null) => {
+                if (item) setPrReviewFilter(item.value as typeof prReviewFilter);
               }}
             >
               <SelectTrigger className="h-8 w-full text-xs">
@@ -1020,10 +1018,9 @@ function HomeComponent() {
           <div className="grid grid-cols-2 gap-2">
             <Select
               items={PR_DRAFT_OPTIONS}
-              defaultValue="all"
-              onValueChange={(item) => {
-                const val = item as { value: string; label: string } | null;
-                if (val) setPrDraftFilter(val.value as typeof prDraftFilter);
+              defaultValue={PR_DRAFT_OPTIONS[0]}
+              onValueChange={(item: { value: string; label: string } | null) => {
+                if (item) setPrDraftFilter(item.value as typeof prDraftFilter);
               }}
             >
               <SelectTrigger className="h-8 w-full text-xs">
@@ -1039,10 +1036,9 @@ function HomeComponent() {
             </Select>
             <Select
               items={PR_SORT_OPTIONS}
-              defaultValue="updated"
-              onValueChange={(item) => {
-                const val = item as { value: string; label: string } | null;
-                if (val) setPrSortBy(val.value as typeof prSortBy);
+              defaultValue={PR_SORT_OPTIONS[0]}
+              onValueChange={(item: { value: string; label: string } | null) => {
+                if (item) setPrSortBy(item.value as typeof prSortBy);
               }}
             >
               <SelectTrigger className="h-8 w-full text-xs">

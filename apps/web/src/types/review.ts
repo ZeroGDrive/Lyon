@@ -7,16 +7,16 @@ export interface AIModelConfig {
 }
 
 // Claude Code CLI models - use aliases for simplicity
-// Full names: claude-sonnet-4-5-20250929, claude-opus-4-5-20251101, claude-haiku-4-5-20251001
+// Full names: claude-sonnet-4-5-20250929, claude-opus-4-6, claude-haiku-4-5-20251001
 export const CLAUDE_MODELS: AIModelConfig[] = [
   { id: "sonnet", name: "Sonnet 4.5", description: "Best for complex agents and coding" },
-  { id: "opus", name: "Opus 4.5", description: "Most intelligent, maximum capability" },
+  { id: "opus", name: "Opus 4.6", description: "Most intelligent, maximum capability" },
   { id: "haiku", name: "Haiku 4.5", description: "Fastest, near-frontier performance" },
 ];
 
 // Codex CLI models
 export const CODEX_MODELS: AIModelConfig[] = [
-  { id: "gpt-5.2-codex", name: "GPT-5.2 Codex", description: "Most advanced agentic coding model" },
+  { id: "gpt-5.3-codex", name: "GPT-5.3 Codex", description: "Most advanced agentic coding model" },
   { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini", description: "Smaller, cost-effective" },
 ];
 
@@ -43,7 +43,7 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelConfig[]> = {
 
 export const DEFAULT_MODELS: Record<AIProvider, string> = {
   claude: "sonnet",
-  codex: "gpt-5.2-codex",
+  codex: "gpt-5.3-codex",
 };
 
 export const DEFAULT_REASONING_EFFORT: CodexReasoningEffort = "high";

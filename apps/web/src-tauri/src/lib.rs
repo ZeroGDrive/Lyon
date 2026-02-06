@@ -555,6 +555,91 @@ async fn set_tray_badge(count: Option<i32>, app: AppHandle) -> Result<(), String
     Ok(())
 }
 
+#[derive(Serialize)]
+struct UpdatePreflightResult {
+    can_update: bool,
+    app_path: String,
+    issue: Option<String>,
+}
+
+#[tauri::command]
+fn check_update_preflight() -> UpdatePreflightResult {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            return UpdatePreflightResult {
+                can_update: false,
+                app_path: String::new(),
+                issue: Some(format!("Cannot determine app location: {}", e)),
+            };
+        }
+    };
+
+    let app_path_str = exe.display().to_string();
+
+    // macOS: check if running from a DMG (read-only /Volumes mount)
+    #[cfg(target_os = "macos")]
+    {
+        if app_path_str.starts_with("/Volumes/") {
+            return UpdatePreflightResult {
+                can_update: false,
+                app_path: app_path_str,
+                issue: Some(
+                    "Lyon is running from a disk image. Please move it to the Applications folder first.".into()
+                ),
+            };
+        }
+
+        // Check if the .app bundle's parent directory is writable
+        // exe is at Lyon.app/Contents/MacOS/Lyon, so .app is 3 levels up
+        if let Some(bundle) = exe.parent().and_then(|p| p.parent()).and_then(|p| p.parent()) {
+            if let Some(parent) = bundle.parent() {
+                let test_file = parent.join(".lyon-update-check");
+                match std::fs::File::create(&test_file) {
+                    Ok(_) => { let _ = std::fs::remove_file(&test_file); }
+                    Err(e) => {
+                        return UpdatePreflightResult {
+                            can_update: false,
+                            app_path: app_path_str,
+                            issue: Some(format!(
+                                "No write permission to {}: {}. Try moving Lyon to a location you own.",
+                                parent.display(), e
+                            )),
+                        };
+                    }
+                }
+            }
+        }
+    }
+
+    // Linux/Windows: check if the executable's directory is writable
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Some(parent) = exe.parent() {
+            let test_file = parent.join(".lyon-update-check");
+            match std::fs::File::create(&test_file) {
+                Ok(_) => { let _ = std::fs::remove_file(&test_file); }
+                Err(e) => {
+                    return UpdatePreflightResult {
+                        can_update: false,
+                        app_path: app_path_str,
+                        issue: Some(format!(
+                            "No write permission to {}: {}",
+                            parent.display(), e
+                        )),
+                    };
+                }
+            }
+        }
+    }
+
+    UpdatePreflightResult {
+        can_update: true,
+        app_path: app_path_str,
+        issue: None,
+    }
+}
+
 #[tauri::command]
 async fn update_tray_menu(prs: Vec<TrayPRInfo>, app: AppHandle) -> Result<(), String> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -761,14 +846,19 @@ pub fn run() {
             start_ai_stream,
             cancel_ai_stream,
             set_tray_badge,
-            update_tray_menu
+            update_tray_menu,
+            check_update_preflight
         ])
         .setup(|app| {
-            #[cfg(debug_assertions)]
             {
+                let log_level = if cfg!(debug_assertions) {
+                    log::LevelFilter::Debug
+                } else {
+                    log::LevelFilter::Info
+                };
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
+                        .level(log_level)
                         .build(),
                 )?;
             }

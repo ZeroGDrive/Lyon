@@ -86,6 +86,116 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Regenerate latest.json from release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          REPO="${GITHUB_REPOSITORY}"
+          BASE_URL="https://github.com/${REPO}/releases/latest/download"
+
+          echo "Building latest.json for ${TAG} (version ${VERSION})"
+
+          # Get all release assets as JSON
+          ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+
+          # Start building the platforms object
+          PLATFORMS="{}"
+
+          # Helper: given a .sig asset name, download its content and add a platform entry
+          add_platform() {
+            local platform_key="$1"
+            local artifact_name="$2"
+            local sig_name="${artifact_name}.sig"
+
+            # Check that both artifact and sig exist in the release
+            if ! echo "$ASSETS" | grep -qF "$artifact_name"; then
+              echo "  Skipping ${platform_key}: artifact ${artifact_name} not found"
+              return
+            fi
+            if ! echo "$ASSETS" | grep -qF "$sig_name"; then
+              echo "  Skipping ${platform_key}: signature ${sig_name} not found"
+              return
+            fi
+
+            # Download the signature content
+            local sig_content
+            sig_content=$(gh release download "$TAG" --pattern "$sig_name" --output - | base64 -w0 2>/dev/null || gh release download "$TAG" --pattern "$sig_name" --output - | base64)
+
+            local url="${BASE_URL}/${artifact_name}"
+
+            PLATFORMS=$(echo "$PLATFORMS" | jq \
+              --arg key "$platform_key" \
+              --arg url "$url" \
+              --arg sig "$sig_content" \
+              '. + {($key): {url: $url, signature: $sig}}')
+
+            echo "  Added ${platform_key} -> ${artifact_name}"
+          }
+
+          # macOS aarch64
+          add_platform "darwin-aarch64" "Lyon_aarch64.app.tar.gz"
+          add_platform "darwin-aarch64-app" "Lyon_aarch64.app.tar.gz"
+
+          # macOS x86_64
+          add_platform "darwin-x86_64" "Lyon_x64.app.tar.gz"
+          add_platform "darwin-x86_64-app" "Lyon_x64.app.tar.gz"
+
+          # Linux x86_64
+          APPIMAGE_NAME=$(echo "$ASSETS" | grep '\.AppImage$' | head -1 || true)
+          DEB_NAME=$(echo "$ASSETS" | grep '\.deb$' | head -1 || true)
+          RPM_NAME=$(echo "$ASSETS" | grep '\.rpm$' | head -1 || true)
+
+          if [ -n "$APPIMAGE_NAME" ]; then
+            add_platform "linux-x86_64" "$APPIMAGE_NAME"
+            add_platform "linux-x86_64-appimage" "$APPIMAGE_NAME"
+          fi
+          if [ -n "$DEB_NAME" ]; then
+            add_platform "linux-x86_64-deb" "$DEB_NAME"
+          fi
+          if [ -n "$RPM_NAME" ]; then
+            add_platform "linux-x86_64-rpm" "$RPM_NAME"
+          fi
+
+          # Windows x86_64
+          MSI_NAME=$(echo "$ASSETS" | grep '\.msi$' | head -1 || true)
+          NSIS_NAME=$(echo "$ASSETS" | grep '\-setup\.exe$' | head -1 || true)
+
+          if [ -n "$MSI_NAME" ]; then
+            add_platform "windows-x86_64" "$MSI_NAME"
+            add_platform "windows-x86_64-msi" "$MSI_NAME"
+          fi
+          if [ -n "$NSIS_NAME" ]; then
+            add_platform "windows-x86_64-nsis" "$NSIS_NAME"
+          fi
+
+          # Build the final latest.json
+          LATEST_JSON=$(jq -n \
+            --arg version "$VERSION" \
+            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
+            --argjson platforms "$PLATFORMS" \
+            '{version: $version, notes: "", pub_date: $pub_date, platforms: $platforms}')
+
+          echo "$LATEST_JSON" > latest.json
+
+          PLATFORM_COUNT=$(echo "$LATEST_JSON" | jq '.platforms | length')
+          echo "Generated latest.json with ${PLATFORM_COUNT} platform entries"
+
+          if [ "$PLATFORM_COUNT" -lt 4 ]; then
+            echo "::warning::latest.json has fewer than 4 platform entries. Some builds may have failed."
+          fi
+
+          # Delete existing latest.json from release and upload the new one
+          gh release delete-asset "$TAG" latest.json --yes 2>/dev/null || true
+          gh release upload "$TAG" latest.json --clobber
+
+          echo "Uploaded authoritative latest.json"
+
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
