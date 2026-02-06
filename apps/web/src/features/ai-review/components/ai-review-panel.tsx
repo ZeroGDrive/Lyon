@@ -222,10 +222,9 @@ function AIReviewPanel({
               Review Focus
             </label>
             <Select
-              defaultValue="default"
-              onValueChange={(item) => {
-                const val = item as { value: string; label: string } | null;
-                if (val) handleTemplateChange(val.value);
+              defaultValue={reviewFocusItems[0]}
+              onValueChange={(item: { value: string; label: string } | null) => {
+                if (item) handleTemplateChange(item.value);
               }}
               items={reviewFocusItems}
             >
@@ -285,10 +284,9 @@ function AIReviewPanel({
             </div>
             <div className="min-w-[220px]">
               <Select
-                value={selectedReviewId ?? historyItems[0]?.value}
-                onValueChange={(item) => {
-                  const val = item as { value: string; label: string } | null;
-                  if (val) setSelectedReviewId(val.value);
+                value={historyItems.find((i) => i.value === (selectedReviewId ?? historyItems[0]?.value)) ?? historyItems[0]}
+                onValueChange={(item: { value: string; label: string } | null) => {
+                  if (item) setSelectedReviewId(item.value);
                 }}
                 items={historyItems}
               >

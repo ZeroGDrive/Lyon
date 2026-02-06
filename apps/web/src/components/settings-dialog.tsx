@@ -89,10 +89,9 @@ function SettingsDialog({ open, onOpenChange, watchedRepos }: SettingsDialogProp
             </div>
             <div className="flex items-center gap-3">
               <Select
-                value={defaultProvider}
-                onValueChange={(item) => {
-                  const val = item as { value: string; label: string } | null;
-                  if (val) handleProviderChange(val.value as AIProvider);
+                value={providerItems.find((i) => i.value === defaultProvider) ?? providerItems[0]}
+                onValueChange={(item: { value: string; label: string } | null) => {
+                  if (item) handleProviderChange(item.value as AIProvider);
                 }}
                 items={providerItems}
               >
