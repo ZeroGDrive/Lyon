@@ -12,6 +12,8 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import X from "lucide-react/dist/esm/icons/x";
 
 const DISMISSED_VERSION_KEY = "update-dismissed-version";
+const FAILED_UPDATE_KEY = "update-failed-version";
+const FAILED_UPDATE_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
 const AUTO_RELAUNCH = true;
 
 interface PreflightResult {
@@ -27,6 +29,7 @@ export function UpdateChecker() {
     let cancelled = false;
 
     async function checkAndDownload() {
+      let updateVersion: string | undefined;
       try {
         // Pre-flight: verify the app can be updated in-place
         console.info("[updater] Running pre-flight checks...");
@@ -60,6 +63,7 @@ export function UpdateChecker() {
           return;
         }
 
+        updateVersion = update.version;
         console.info("[updater] Update available:", update.version);
 
         // Check if user dismissed this version
@@ -67,6 +71,29 @@ export function UpdateChecker() {
         if (dismissedVersion === update.version) {
           console.info("[updater] Version dismissed by user");
           return;
+        }
+
+        // Check if this version recently failed to install
+        try {
+          const failedRaw = localStorage.getItem(FAILED_UPDATE_KEY);
+          if (failedRaw) {
+            const failed = JSON.parse(failedRaw) as {
+              version: string;
+              timestamp: number;
+            };
+            if (
+              failed.version === update.version &&
+              Date.now() - failed.timestamp < FAILED_UPDATE_COOLDOWN_MS
+            ) {
+              console.info(
+                "[updater] Skipping version that recently failed:",
+                failed.version,
+              );
+              return;
+            }
+          }
+        } catch {
+          localStorage.removeItem(FAILED_UPDATE_KEY);
         }
 
         // Show progress while the update downloads and installs
@@ -93,6 +120,7 @@ export function UpdateChecker() {
         console.info("[updater] Downloading and installing...");
         await update.downloadAndInstall();
         console.info("[updater] Download and install complete");
+        localStorage.removeItem(FAILED_UPDATE_KEY);
 
         if (cancelled) return;
 
@@ -169,6 +197,21 @@ export function UpdateChecker() {
         if (toastIdRef.current) {
           toast.dismiss(toastIdRef.current);
           toastIdRef.current = null;
+        }
+
+        // Cache the failed version so we don't retry on every startup
+        if (updateVersion) {
+          try {
+            localStorage.setItem(
+              FAILED_UPDATE_KEY,
+              JSON.stringify({
+                version: updateVersion,
+                timestamp: Date.now(),
+              }),
+            );
+          } catch {
+            // ignore storage errors
+          }
         }
 
         const message = error instanceof Error ? error.message : String(error);
